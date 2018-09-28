@@ -37,6 +37,7 @@ void send_error(int client_fd, int errcode);
 void decode_url(char *out, char *url);
 void cleanup(int client_fd);
 void load_config();
+void get_mime_type(char *out, char *uri);
 
 
 int main()
@@ -46,7 +47,7 @@ int main()
     struct server_socket sock = create_server_socket(port);
     pthread_t pthread;
     load_config();
-    printf("Started HTTP server on port %d\n", port);
+    printf("Started HTTP server on port %d..\n", port);
     while (1) {
         new_fd = accept(sock.fd, (struct sockaddr*)sock.handle, &sock.len);
         if (new_fd > 0) {
@@ -54,7 +55,7 @@ int main()
             usleep(1000); //handle racing condition
         }
     }
-    printf("Server stopped\n");
+    printf("Server stopped.\n");
     
     return 0;
 }
@@ -95,12 +96,14 @@ struct server_socket create_server_socket(int port)
 void *conn_handler(void *fd)
 {
     int client_fd = *(int*)fd;
-    static char request[4096] = "";
-    static char response[4096] = "";
-    static char local_uri[1024] = "";
-    static char header[1024] = "HTTP/1.1 200 OK\nContent-Type: text/html; charset=UTF-8\n\n"
-    "<!DOCTYPE html PUBLIC>";
-    
+    char request[4096] = "";
+    char response[4096];
+    char local_uri[1024] = "";
+    char mime_type[128] = "";
+    //static char header[1024] = "HTTP/1.1 200 OK\nContent-Type: text/html; charset=UTF-8\n\n"
+    //"<!DOCTYPE html PUBLIC>";
+    char header[1024] = "";
+
     printf("Client connected, fd: %d\n", client_fd);
 
     //PROCESS HTTP HEADER
@@ -108,7 +111,6 @@ void *conn_handler(void *fd)
     struct http_request req = process_request(request);
     printf("method:%s\nuri:%s\nhttpver:%s\n", req.method, req.URI, req.httpver);
     fflush(stdout);
-
 
     //SERVE CLIENT REQUEST    
     //PROCESS URI (decode url, check privileges or if file exists)
@@ -125,22 +127,30 @@ void *conn_handler(void *fd)
     }
 
     //SEND HEADER
-    send_data(client_fd, header, sizeof(header)); //send header
+    get_mime_type(mime_type, req.URI);
+    strcpy(header, "HTTP/1.1 200 OK\n");
+    strcat(header, "Content-Type: ");
+    strcat(header, mime_type);
+    strcat(header, "; charset=UTF-8");
+    strcat(header, "\r\n\r\n");
+    send_data(client_fd, header, strlen(header)); //send header
+
 
     //SEND BODY
+    long content_len = file_get_size(local_uri);
+    printf("content-length: %d\n", content_len);
+    int content_fd = open(local_uri, O_RDONLY); //get requested file content
     int bytes_written = 0;
-    int html_fd = open(local_uri, O_RDONLY); //get requested file content
-    long html_len = file_get_size(local_uri);
-    printf("content-length: %d\n", html_len);
+    int bytes_read = 0;
 
-    while (bytes_written < html_len) {
+    while (bytes_written < content_len) {
         memset(response, 0, sizeof(response));
-        read(html_fd, response, sizeof(response)); //html body
-        bytes_written += send_data(client_fd, response, sizeof(response));
+        bytes_read = read(content_fd, response, sizeof(response)); //content body
+        bytes_written += send_data(client_fd, response, bytes_read);
         if (bytes_written < 0) break; //error occurred, close fd and clean up;
     }
 
-    close(html_fd);
+    close(content_fd);
 
     //shutdown connection and free resources
     cleanup(client_fd);
@@ -171,11 +181,11 @@ struct http_request process_request(char *request)
     memcpy(ret.httpver, request+method_len+uri_len+2, httpver_len);
     ret.httpver[httpver_len] = 0; //NULL terminate
 
-    //next line of http header
-    //accept-encoding, user-agent, referer, accept-language
+    /*next line of http header
+    i.e. accept-encoding, user-agent, referer, accept-language*/
     char *header_fields = request+method_len+uri_len+httpver_len+2;
     //printf("%s\n", request);
-    fflush(stdout);
+    //fflush(stdout);
     return ret;
 }
 
@@ -186,6 +196,7 @@ void load_config()
     char buf[4096];
     int fd = open("http.conf", O_RDONLY);
     read(fd, buf, sizeof(buf));
+    //site physical path
     char *sitepath = strstr(buf, "PATH=");
     sitepath += 5; //"PATH=" len
     strcpy(g_sitepath, sitepath);
@@ -203,7 +214,9 @@ long file_get_size(char *path)
 {
     FILE *fd = fopen(path, "r");
     fseek(fd, 0L, SEEK_END);
-    return ftell(fd);
+    long ret = ftell(fd);
+    fclose(fd);
+    return ret;
 }
 
 
@@ -211,8 +224,8 @@ long file_get_size(char *path)
 int send_data(int client_fd, char *data, size_t len)
 {
     int bytes_written = 0;
-    while (bytes_written < len) { //handle traffic congestion
-        bytes_written += write(client_fd, data, len); //send http response
+    while (bytes_written < len) { //in case of traffic congestion
+        bytes_written += write(client_fd, data, len); //send tcp response
         if (bytes_written == -1) break; //error sending data to client
     }
     return bytes_written;
@@ -254,5 +267,19 @@ void decode_url(char *out, char *url)
         }
         else c = url[i];
         *(out++) = c;
+    }
+}
+
+
+void get_mime_type(char *out, char *uri)
+{
+    static char *mime_types[][2] = {{".html", "text/html"}, {".css", "text/css"}, {".jpg", "image/jpeg"}, {".png", "image/png"}, {".mp4", "video/mp4"}};
+    int total_mimes = sizeof(mime_types) / sizeof(mime_types[0]);
+    char *uri_extension = strrchr(uri, '.'); //get requested file's extension (.html, .png..)
+    for (int i = 0; i < total_mimes; ++i) {
+        if (strcmp(uri_extension, mime_types[i][0]) == 0) {
+            strcpy(out, mime_types[i][1]);
+            break;
+        }
     }
 }
