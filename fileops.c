@@ -22,6 +22,14 @@ int file_executable(char *path)
     return access(path, X_OK);
 }
 
+//check if file is regular or is directory
+int is_dir(char *path)
+{
+    struct stat path_stat;
+    stat(path, &path_stat);
+    return S_ISDIR(path_stat.st_mode);
+}
+
 
 long file_get_size(char *path)
 {

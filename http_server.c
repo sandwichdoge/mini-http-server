@@ -22,7 +22,6 @@ int PORT = 80; //default port 80
 
 void *conn_handler(void *fd);
 void send_error(int client_fd, int errcode);
-void sock_cleanup(int client_fd);
 int load_global_config();
 
 
@@ -32,7 +31,8 @@ int main()
     struct server_socket sock = create_server_socket(PORT);
     pthread_t pthread;
     if (load_global_config() < 0) {
-        printf("Error in http.conf\n");
+        printf("Fatal error in http.conf\n");
+        return -1;
     }
 
     printf("Started HTTP server on port %d..\n", PORT);
@@ -47,7 +47,6 @@ int main()
     
     return 0;
 }
-
 
 
 //handle an incoming connection
@@ -154,15 +153,16 @@ int load_global_config()
     //SITEPATH: physical path of website
     s = strstr(buf, "PATH=");
     lnbreak = strstr(s, "\n");
-    if (s == NULL) return -1;  //no PATH config
+    if (s == NULL) return -1; //no PATH config
     s += 5; //len of "PATH="
     memset(SITEPATH, 0, sizeof(SITEPATH));
     memcpy(SITEPATH, s, lnbreak - s);
+    if (!is_dir(SITEPATH)) return -2; //no PATH specified
 
     //PORT: port to listen on (default 80)
     s = strstr(buf, "PORT=");
     if (s == NULL) return 0; //no PORT config, use default 80
-    s += 5;
+    s += 5; //len of "PORT="
     PORT = atoi(s);
 
     //other configs below
