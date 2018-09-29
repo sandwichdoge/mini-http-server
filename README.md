@@ -1,7 +1,7 @@
 # mini-http-server
 Primitive HTTP server in C.
 
-TODO: handle more MIME types, privilege errors (403s), date and content-length.
+TODO: handle date and content-length, add makefile.
 
 - Compile
 ```
