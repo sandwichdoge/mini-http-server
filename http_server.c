@@ -22,6 +22,7 @@ int PORT = 80; //default port 80
 
 void *conn_handler(void *fd);
 void send_error(int client_fd, int errcode);
+int is_valid_method(char *method);
 int load_global_config();
 
 
@@ -79,6 +80,11 @@ void *conn_handler(void *fd)
     strcpy(local_uri, SITEPATH); //allow only resources in site directory
     strncat(local_uri, decoded_uri, sizeof(decoded_uri) - sizeof(SITEPATH));
 
+    if (!is_valid_method(req.method)) {
+        send_error(client_fd, 400); //then send 400 to client
+        goto cleanup;
+    }
+
     if (file_exists(local_uri) < 0) { //if local resource doesn't exist
         send_error(client_fd, 404); //then send 404 to client
         goto cleanup;
@@ -87,6 +93,8 @@ void *conn_handler(void *fd)
         send_error(client_fd, 403);  //then send 403 to client
         goto cleanup;
     }
+
+    //TODO: handle other methods like POST, PUT, HEAD..
 
     //SEND HEADER
     //TODO: better code to handle response header
@@ -114,17 +122,30 @@ void *conn_handler(void *fd)
     }
 
     close(content_fd);
-
     cleanup:
     //shutdown connection and free resources
     sock_cleanup(client_fd);
 }
 
 
+//return 0 if request method is not valid
+int is_valid_method(char *method)
+{
+    char *methods[] = {"GET", "POST", "HEAD", "PUT", "DELETE", "PATCH", "CONNECT", "OPTIONS"};
+    int total = sizeof(methods) / sizeof(methods[0]);
+    for (int i = 0; i < total; ++i) {
+        if (strcmp(method, methods[i]) == 0) return 1;
+    }
+    return 0;
+}
+
+
 void send_error(int client_fd, int errcode)
 {
-    char err404[] = "HTTP/1.1 404 NOT FOUND\nContent-Type: text/html; charset=UTF-8\r\n\r\n404\nResource not found on server.";
-    char err403[] = "HTTP/1.1 403 FORBIDDEN\nContent-Type: text/html; charset=UTF-8\r\n\r\n403\nNot enough privilege to access resource.";
+    char err404[] = "HTTP/1.1 404 NOT FOUND\nContent-Type: text/html; charset=UTF-8\r\n\r\n404\nResource not found on server.\n";
+    char err403[] = "HTTP/1.1 403 FORBIDDEN\nContent-Type: text/html; charset=UTF-8\r\n\r\n403\nNot enough privilege to access resource.\n";
+    char err400[] = "HTTP/1.1 400 BAD REQUEST\nContent-Type: text/html; charset=UTF-8\r\n\r\n400\nBad request.\n";
+
     switch (errcode) {
         case 404:
             send_data(client_fd, err404, sizeof(err404));
@@ -132,6 +153,9 @@ void send_error(int client_fd, int errcode)
         case 403:
             send_data(client_fd, err403, sizeof(err403));
             break;
+        case 400:
+            send_data(client_fd, err400, sizeof(err400));
+            break;       
     }
 }
 

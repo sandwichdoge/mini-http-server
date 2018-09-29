@@ -1,4 +1,5 @@
 #include "http-request.h"
+#include <stdio.h>
 
 //return info about request like method, uri, http version, etc.
 struct http_request process_request(char *request)
@@ -6,6 +7,7 @@ struct http_request process_request(char *request)
     struct http_request ret;
     int method_len = 0;
     int uri_len = 0;
+    int request_len = strlen(request);
 
     memset(ret.URI, 0, sizeof(ret.URI));
     memset(ret.method, 0, sizeof(ret.method));
@@ -16,16 +18,27 @@ struct http_request process_request(char *request)
     memcpy(ret.method, request, method_len);
     ret.method[method_len] = 0; //NULL terminate
 
+
     //requested URI
-    for (uri_len = 0; request[method_len + uri_len + 1] != ' ' && 
-    request[method_len + uri_len + 1] != '\n' && 
-    request[method_len + uri_len + 1] != 0 &&
-    uri_len <= sizeof(ret.URI); ++uri_len); //next is the requested URI, after space
-    memcpy(ret.URI, request+method_len+1, uri_len);
-    ret.URI[uri_len] = 0; //NULL terminate
+    char *URI = strchr(request, ' ');
+    char *URI_end = NULL;
+    if (URI) URI_end = strchr(URI + 1, ' ');
+    if (URI && URI_end) {
+        uri_len = URI_end - URI - 1;
+        memcpy(ret.URI, URI + 1, uri_len);
+    }
+    else {
+        strcpy(ret.URI, "/");
+    }
 
     //HTTP version
-    char *httpver = strstr(request + method_len, "HTTP/");
+    char *httpver ;
+    if (!URI) {
+        httpver = request;
+    }
+    else {
+        httpver = strstr(URI + uri_len, "HTTP/");
+    }
     if (httpver) {
         strncpy(ret.httpver, httpver, 8);
     }
@@ -40,6 +53,7 @@ struct http_request process_request(char *request)
     //fflush(stdout);
     return ret;
 }
+
 
 //%69ndex.html => index.html
 void decode_url(char *out, char *url)
