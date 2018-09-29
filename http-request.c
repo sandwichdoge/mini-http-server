@@ -6,27 +6,36 @@ struct http_request process_request(char *request)
     struct http_request ret;
     int method_len = 0;
     int uri_len = 0;
-    int httpver_len = 0;
 
     memset(ret.URI, 0, sizeof(ret.URI));
     memset(ret.method, 0, sizeof(ret.method));
     memset(ret.httpver, 0, sizeof(ret.httpver));
 
+    //method
     for (method_len; request[method_len] != ' ' && method_len <= sizeof(ret.method); ++method_len);
     memcpy(ret.method, request, method_len);
     ret.method[method_len] = 0; //NULL terminate
 
-    for (uri_len = 0; request[method_len + uri_len + 1] != ' ' && uri_len <= sizeof(ret.URI); ++uri_len); //next is the requested URI, after space
+    //requested URI
+    for (uri_len = 0; request[method_len + uri_len + 1] != ' ' && 
+    request[method_len + uri_len + 1] != '\n' && 
+    request[method_len + uri_len + 1] != 0 &&
+    uri_len <= sizeof(ret.URI); ++uri_len); //next is the requested URI, after space
     memcpy(ret.URI, request+method_len+1, uri_len);
     ret.URI[uri_len] = 0; //NULL terminate
 
-    for (httpver_len = 0; request[method_len + uri_len + httpver_len + 1] != '\n' && httpver_len <= sizeof(ret.httpver); ++httpver_len); //next is httpver if specified
-    memcpy(ret.httpver, request+method_len+uri_len+2, httpver_len);
-    ret.httpver[httpver_len] = 0; //NULL terminate
+    //HTTP version
+    char *httpver = strstr(request + method_len, "HTTP/");
+    if (httpver) {
+        strncpy(ret.httpver, httpver, 8);
+    }
+    else {
+        strncpy(ret.httpver, "HTTP/1.1", 8); //use default HTTP ver
+    }
 
     /*next line of http header
     i.e. accept-encoding, user-agent, referer, accept-language*/
-    char *header_fields = request+method_len+uri_len+httpver_len+2;
+    //char *header_fields = strchr(request, '\n') + 1;
     //printf("%s\n", request);
     //fflush(stdout);
     return ret;

@@ -19,7 +19,7 @@ struct server_socket create_server_socket(int port)
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)); //optional, prevents address already in use error
     err = bind(fd, (struct sockaddr*)&server, sizeof(server));
     if (err < 0) printf("error binding\n");
-    err = listen(fd, 16); //max connections
+    err = listen(fd, 128); //max connections
     if (err < 0) printf("error listening\n");
 
     ret.fd = fd;
@@ -44,8 +44,8 @@ int send_data(int client_fd, char *data, size_t len)
  //close connection and clean up resources
 void sock_cleanup(int client_fd)
 {
-    printf("Disconnecting client: %d\n", client_fd);
-    fflush(stdout);
+    //printf("Disconnecting client: %d\n", client_fd);
+    //fflush(stdout);
     shutdown(client_fd, 2); //shutdown connection
     close(client_fd);
 }

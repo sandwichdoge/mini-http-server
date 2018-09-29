@@ -16,7 +16,7 @@
  *then read/write into socket returned by accept()
  */
 
-char SITEPATH[128]; //physical path of website on disk
+char SITEPATH[512] = ""; //physical path of website on disk
 int PORT = 80; //default port 80
 
 
@@ -40,7 +40,7 @@ int main()
         new_fd = accept(sock.fd, (struct sockaddr*)sock.handle, &sock.len);
         if (new_fd > 0) {
             pthread_create(&pthread, NULL, conn_handler, &new_fd); //create a thread for each new connection
-            usleep(1000); //handle racing condition
+            usleep(2000); //handle racing condition
         }
     }
     printf("Server stopped.\n");
@@ -60,17 +60,15 @@ void *conn_handler(void *fd)
     char response[4096];
     char local_uri[1024] = "";
     char mime_type[128] = "";
-    //static char header[1024] = "HTTP/1.1 200 OK\nContent-Type: text/html; charset=UTF-8\n\n"
-    //"<!DOCTYPE html PUBLIC>";
     char header[1024] = "";
 
-    printf("Client connected, fd: %d\n", client_fd);
+    //printf("Client connected, fd: %d\n", client_fd);
 
     //PROCESS HTTP HEADER
     if (read(client_fd, request, sizeof(request)) == -1) sock_cleanup(client_fd);
     struct http_request req = process_request(request);
-    printf("method:%s\nuri:%s\nhttpver:%s\n", req.method, req.URI, req.httpver);
-    fflush(stdout);
+    //printf("method:%s\nuri:%s\nhttpver:%s\n", req.method, req.URI, req.httpver);
+    //fflush(stdout);
 
     //SERVE CLIENT REQUEST    
     //PROCESS URI (decode url, check privileges or if file exists)
@@ -80,6 +78,7 @@ void *conn_handler(void *fd)
 
     strcpy(local_uri, SITEPATH); //allow only resources in site directory
     strncat(local_uri, decoded_uri, sizeof(decoded_uri) - sizeof(SITEPATH));
+
     if (file_exists(local_uri) < 0) { //if local resource doesn't exist
         send_error(client_fd, 404); //then send 404 to client
         goto cleanup;
@@ -102,7 +101,7 @@ void *conn_handler(void *fd)
 
     //SEND BODY
     long content_len = file_get_size(local_uri);
-    printf("content-length: %d\n", content_len);
+    //printf("Content-length: %d\n", content_len);
     int content_fd = open(local_uri, O_RDONLY); //get requested file content
     int bytes_written = 0;
     int bytes_read = 0;
@@ -131,7 +130,7 @@ void send_error(int client_fd, int errcode)
             send_data(client_fd, err404, sizeof(err404));
             break;
         case 403:
-            send_data(client_fd, err404, sizeof(err404));
+            send_data(client_fd, err403, sizeof(err403));
             break;
     }
 }
@@ -158,6 +157,7 @@ int load_global_config()
     memset(SITEPATH, 0, sizeof(SITEPATH));
     memcpy(SITEPATH, s, lnbreak - s);
     if (!is_dir(SITEPATH)) return -2; //no PATH specified
+    printf("%s\n", SITEPATH);
 
     //PORT: port to listen on (default 80)
     s = strstr(buf, "PORT=");
