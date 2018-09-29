@@ -1,53 +1,41 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h> //read()/write(), usleep()
-#include <sys/types.h> //socket stuff
-#include <sys/socket.h> //socket stuff
-#include <netinet/in.h> //INADDR_ANY
 #include <pthread.h> //multi-connection
 #include <fcntl.h>  //to read html files
 #include <string.h>
+#include "serversocket.h"
+#include "http-request.h"
+#include "fileops.h"
+#include "http-mimes.h"
+
+//gcc http_server.c serversocket.c http-request.c fileops.c http-mimes.c -lpthread
 
 /*Creating socket server in C:
  *socket() -> setsocketopt() -> bind() -> listen() -> accept()
  *then read/write into socket returned by accept()
  */
 
-char g_sitepath[128];
+char SITEPATH[128]; //physical path of website on disk
+int PORT = 80; //default port 80
 
-struct server_socket {
-    int fd;
-    socklen_t len;
-    struct sockaddr_in *handle;
-};
-
-struct http_request {
-    char method[8];
-    char URI[1024];
-    char httpver[16];
-};
 
 void *conn_handler(void *fd);
-struct server_socket create_server_socket(int port);
-struct http_request process_request(char *request);
-long file_get_size(char *path);
-int file_exists(char *path);
-int send_data(int client_fd, char *data, size_t len);
 void send_error(int client_fd, int errcode);
-void decode_url(char *out, char *url);
-void cleanup(int client_fd);
-void load_config();
-void get_mime_type(char *out, char *uri);
+void sock_cleanup(int client_fd);
+int load_global_config();
 
 
 int main()
 {
-    int port = 80;
     int new_fd = 0;
-    struct server_socket sock = create_server_socket(port);
+    struct server_socket sock = create_server_socket(PORT);
     pthread_t pthread;
-    load_config();
-    printf("Started HTTP server on port %d..\n", port);
+    if (load_global_config() < 0) {
+        printf("Error in http.conf\n");
+    }
+
+    printf("Started HTTP server on port %d..\n", PORT);
     while (1) {
         new_fd = accept(sock.fd, (struct sockaddr*)sock.handle, &sock.len);
         if (new_fd > 0) {
@@ -60,33 +48,6 @@ int main()
     return 0;
 }
 
-
-struct server_socket create_server_socket(int port)
-{
-    int err = 0;
-    struct server_socket ret;
-    struct sockaddr_in server;
-
-    server.sin_family = AF_INET;
-    server.sin_port = htons(port);
-    server.sin_addr.s_addr = INADDR_ANY;
-
-    socklen_t len = sizeof(server);
-
-    int fd = socket(AF_INET, SOCK_STREAM, 0); //Inet TCP
-    if (!fd) printf("error creating socket\n");
-    int opt = 1;
-    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)); //optional, prevents address already in use error
-    err = bind(fd, (struct sockaddr*)&server, sizeof(server));
-    if (err < 0) printf("error binding\n");
-    err = listen(fd, 16); //max connections
-    if (err < 0) printf("error listening\n");
-
-    ret.fd = fd;
-    ret.len = len;
-    ret.handle = &server;
-    return ret;
-}
 
 
 //handle an incoming connection
@@ -107,7 +68,7 @@ void *conn_handler(void *fd)
     printf("Client connected, fd: %d\n", client_fd);
 
     //PROCESS HTTP HEADER
-    if (read(client_fd, request, sizeof(request)) == -1) cleanup(client_fd);
+    if (read(client_fd, request, sizeof(request)) == -1) sock_cleanup(client_fd);
     struct http_request req = process_request(request);
     printf("method:%s\nuri:%s\nhttpver:%s\n", req.method, req.URI, req.httpver);
     fflush(stdout);
@@ -118,15 +79,19 @@ void *conn_handler(void *fd)
     if (strcmp(req.URI, "/") == 0) strcpy(req.URI, "/index.html");
     decode_url(decoded_uri, req.URI); //decode url (%69ndex.html -> index.html)
 
-    strcpy(local_uri, g_sitepath); //allow only resources in site directory
-    strncat(local_uri, decoded_uri, sizeof(decoded_uri) - sizeof(g_sitepath));
+    strcpy(local_uri, SITEPATH); //allow only resources in site directory
+    strncat(local_uri, decoded_uri, sizeof(decoded_uri) - sizeof(SITEPATH));
     if (file_exists(local_uri) < 0) { //if local resource doesn't exist
         send_error(client_fd, 404); //then send 404 to client
-        cleanup(client_fd);
-        return NULL; //stop;
+        goto cleanup;
+    }
+    if (file_readable(local_uri) < 0) { //local resource isn't read-accessible
+        send_error(client_fd, 403);  //then send 403 to client
+        goto cleanup;
     }
 
     //SEND HEADER
+    //TODO: better code to handle response header
     get_mime_type(mime_type, req.URI);
     strcpy(header, "HTTP/1.1 200 OK\n");
     strcat(header, "Content-Type: ");
@@ -152,134 +117,55 @@ void *conn_handler(void *fd)
 
     close(content_fd);
 
+    cleanup:
     //shutdown connection and free resources
-    cleanup(client_fd);
-}
-
-
-//return info about request like method, uri, http version, etc.
-struct http_request process_request(char *request)
-{
-    struct http_request ret;
-    int method_len = 0;
-    int uri_len = 0;
-    int httpver_len = 0;
-
-    memset(ret.URI, 0, sizeof(ret.URI));
-    memset(ret.method, 0, sizeof(ret.method));
-    memset(ret.httpver, 0, sizeof(ret.httpver));
-
-    for (method_len; request[method_len] != ' ' && method_len <= sizeof(ret.method); ++method_len);
-    memcpy(ret.method, request, method_len);
-    ret.method[method_len] = 0; //NULL terminate
-
-    for (uri_len = 0; request[method_len + uri_len + 1] != ' ' && uri_len <= sizeof(ret.URI); ++uri_len); //next is the requested URI, after space
-    memcpy(ret.URI, request+method_len+1, uri_len);
-    ret.URI[uri_len] = 0; //NULL terminate
-
-    for (httpver_len = 0; request[method_len + uri_len + httpver_len + 1] != '\n' && httpver_len <= sizeof(ret.httpver); ++httpver_len); //next is httpver if specified
-    memcpy(ret.httpver, request+method_len+uri_len+2, httpver_len);
-    ret.httpver[httpver_len] = 0; //NULL terminate
-
-    /*next line of http header
-    i.e. accept-encoding, user-agent, referer, accept-language*/
-    char *header_fields = request+method_len+uri_len+httpver_len+2;
-    //printf("%s\n", request);
-    //fflush(stdout);
-    return ret;
-}
-
-
-//load global config like site directory
-void load_config()
-{
-    char buf[4096];
-    int fd = open("http.conf", O_RDONLY);
-    read(fd, buf, sizeof(buf));
-    //site physical path
-    char *sitepath = strstr(buf, "PATH=");
-    sitepath += 5; //"PATH=" len
-    strcpy(g_sitepath, sitepath);
-
-}
-
-
-int file_exists(char *path)
-{
-    return access(path, F_OK);
-}
-
-
-long file_get_size(char *path)
-{
-    FILE *fd = fopen(path, "r");
-    fseek(fd, 0L, SEEK_END);
-    long ret = ftell(fd);
-    fclose(fd);
-    return ret;
-}
-
-
-//more robust way to send data via tcp
-int send_data(int client_fd, char *data, size_t len)
-{
-    int bytes_written = 0;
-    while (bytes_written < len) { //in case of traffic congestion
-        bytes_written += write(client_fd, data, len); //send tcp response
-        if (bytes_written == -1) break; //error sending data to client
-    }
-    return bytes_written;
+    sock_cleanup(client_fd);
 }
 
 
 void send_error(int client_fd, int errcode)
 {
-    char err404[] = "HTTP/1.1 404 NOT FOUND\nContent-Type: text/html; charset=UTF-8\n\n404\nResource not found on server.";
+    char err404[] = "HTTP/1.1 404 NOT FOUND\nContent-Type: text/html; charset=UTF-8\r\n\r\n404\nResource not found on server.";
+    char err403[] = "HTTP/1.1 403 FORBIDDEN\nContent-Type: text/html; charset=UTF-8\r\n\r\n403\nNot enough privilege to access resource.";
     switch (errcode) {
         case 404:
+            send_data(client_fd, err404, sizeof(err404));
+            break;
+        case 403:
             send_data(client_fd, err404, sizeof(err404));
             break;
     }
 }
 
 
- //close connection and clean up resources
-void cleanup(int client_fd)
+/*load global configs
+ *SITEPATH: physical path of website on disk
+ *PORT: port to listen on (default 80)
+ */
+int load_global_config()
 {
-    printf("Disconnecting client: %d\n", client_fd);
-    fflush(stdout);
-    shutdown(client_fd, 2); //shutdown connection
-    close(client_fd);
-}
+    char buf[4096];
+    char *s;
+    char *lnbreak;
 
+    int fd = open("http.conf", O_RDONLY);
+    read(fd, buf, sizeof(buf)); //read http.conf file into buf
 
-//%69ndex.html => index.html
-void decode_url(char *out, char *url)
-{
-    char buf[3];
-    char c;
-    for (int i = 0; url[i]; ++i) {
-        if (url[i] == '%') {
-            i++;
-            memcpy(buf, &url[i], 2);
-            c = (char)strtoul(buf, 0, 16);
-            i += 1;
-        }
-        else c = url[i];
-        *(out++) = c;
-    }
-}
+    //SITEPATH: physical path of website
+    s = strstr(buf, "PATH=");
+    lnbreak = strstr(s, "\n");
+    if (s == NULL) return -1;  //no PATH config
+    s += 5; //len of "PATH="
+    memset(SITEPATH, 0, sizeof(SITEPATH));
+    memcpy(SITEPATH, s, lnbreak - s);
 
+    //PORT: port to listen on (default 80)
+    s = strstr(buf, "PORT=");
+    if (s == NULL) return 0; //no PORT config, use default 80
+    s += 5;
+    PORT = atoi(s);
 
-void get_mime_type(char *out, char *uri)
-{
-    static char *mime_types[][2] = {{".html", "text/html"}, {".css", "text/css"}, {".jpg", "image/jpeg"}, {".png", "image/png"}, {".mp4", "video/mp4"}};
-    int total_mimes = sizeof(mime_types) / sizeof(mime_types[0]);
-    char *uri_extension = strrchr(uri, '.'); //get requested file's extension (.html, .png..)
-    for (int i = 0; i < total_mimes; ++i) {
-        if (strcmp(uri_extension, mime_types[i][0]) == 0) {
-            strcpy(out, mime_types[i][1]);
-            break;
-        }
-    }
+    //other configs below
+
+    return 0;
 }
