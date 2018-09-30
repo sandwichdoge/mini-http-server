@@ -29,12 +29,20 @@ struct server_socket create_server_socket(int port)
 }
 
 
+/*read data via tcp*/
+int read_data(int client_fd, char *buf, size_t bufsize)
+{
+    memset(buf, bufsize, 0);
+    return read(client_fd, buf, bufsize);
+}
+
+
 //more robust way to send data via tcp
 int send_data(int client_fd, char *data, size_t len)
 {
     int bytes_written = 0;
     while (bytes_written < len) { //in case of traffic congestion
-        bytes_written += write(client_fd, data, len); //send tcp response
+        bytes_written += write(client_fd, data, len - bytes_written); //send tcp response
         if (bytes_written == -1) break; //error sending data to client
     }
     return bytes_written;

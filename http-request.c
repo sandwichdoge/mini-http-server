@@ -9,6 +9,7 @@ struct http_request process_request(char *request)
     int uri_len = 0;
     int request_len = strlen(request);
 
+    /*HEADER SECTION*/
     memset(ret.URI, 0, sizeof(ret.URI));
     memset(ret.method, 0, sizeof(ret.method));
     memset(ret.httpver, 0, sizeof(ret.httpver));
@@ -51,6 +52,14 @@ struct http_request process_request(char *request)
     //char *header_fields = strchr(request, '\n') + 1;
     //printf("%s\n", request);
     //fflush(stdout);
+
+
+    /*BODY SECTION*/
+    char *body = strstr(request, "\r\n\r\n");
+    if (!body) return ret;
+    body += 4; //strip preceding blank line
+    ret.body = body;
+
     return ret;
 }
 

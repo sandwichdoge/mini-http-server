@@ -8,6 +8,7 @@
 #include "http-request.h"
 #include "fileops.h"
 #include "http-mimes.h"
+#define MAX_REQUEST_LEN 20*1000*1024
 
 //gcc http_server.c serversocket.c http-request.c fileops.c http-mimes.c -lpthread
 
@@ -49,24 +50,51 @@ int main()
     return 0;
 }
 
+//something wrong with std realloc()
+void *_realloc(void *ptr, size_t newsz)
+{
+    void *ret = malloc(newsz);
+    if (!ret) return NULL;
+    memcpy(ret, ptr, newsz);
+    free(ptr);
+    return ret;
+}
+
 
 //handle an incoming connection
 //return nothing
 //*fd is pointer the file descriptor of client socket
-//TODO: MIME types, date, content-length
+//TODO: date, content-length, POST
 void *conn_handler(void *fd)
 {
     int client_fd = *(int*)fd;
-    char request[4096] = "";
+    int bytes_read = 0;
+    int n = 0;
+    char buf[4096] = "";
     char response[4096];
     char local_uri[1024] = "";
     char mime_type[128] = "";
     char header[1024] = "";
+    char *request = NULL;
+    char *_new_request;
 
     //printf("Client connected, fd: %d\n", client_fd);
 
-    //PROCESS HTTP HEADER
-    if (read(client_fd, request, sizeof(request)) == -1) sock_cleanup(client_fd);
+    //PROCESS HTTP REQUEST
+    /*if buf[sizeof(buf)] != 0, there's still more data*/
+    request = malloc(1);
+    do {
+        n = read_data(client_fd, buf, sizeof(buf));
+        if (n == -1) {
+            goto cleanup;
+        }
+        bytes_read += n;
+        _new_request = (char*)_realloc(request, bytes_read);
+        if (_new_request) request = _new_request;
+        else goto cleanup; //out of memory
+        memcpy(request + bytes_read - n, buf, n); //append data from tcp stream to request
+    } while (buf[sizeof(buf)] != 0 && bytes_read < MAX_REQUEST_LEN); //if request is larger than 20MB then stop
+    
     struct http_request req = process_request(request);
     //printf("method:%s\nuri:%s\nhttpver:%s\n", req.method, req.URI, req.httpver);
     //fflush(stdout);
@@ -78,7 +106,7 @@ void *conn_handler(void *fd)
     decode_url(decoded_uri, req.URI); //decode url (%69ndex.html -> index.html)
 
     strcpy(local_uri, SITEPATH); //allow only resources in site directory
-    strncat(local_uri, decoded_uri, sizeof(decoded_uri) - sizeof(SITEPATH));
+    strncat(local_uri, decoded_uri, sizeof(decoded_uri) - sizeof(SITEPATH)); //local_uri: local path of requested resource
 
     if (!is_valid_method(req.method)) {
         send_error(client_fd, 400); //then send 400 to client
@@ -112,7 +140,7 @@ void *conn_handler(void *fd)
     //printf("Content-length: %d\n", content_len);
     int content_fd = open(local_uri, O_RDONLY); //get requested file content
     int bytes_written = 0;
-    int bytes_read = 0;
+    bytes_read = 0;
 
     while (bytes_written < content_len) {
         memset(response, 0, sizeof(response));
@@ -124,7 +152,9 @@ void *conn_handler(void *fd)
     close(content_fd);
     cleanup:
     //shutdown connection and free resources
+    free(request);
     sock_cleanup(client_fd);
+    return NULL;
 }
 
 
