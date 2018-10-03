@@ -4,10 +4,14 @@
 #include <pthread.h> //multi-connection
 #include <fcntl.h>  //to read html files
 #include <string.h>
+#include <sys/wait.h>
 #include "serversocket.h"
 #include "http-request.h"
 #include "fileops.h"
 #include "http-mimes.h"
+#include "sysout.h"
+#include "casing.h" //uppercase() and lowercase()
+
 #define MAX_REQUEST_LEN 20*1000*1024
 
 //gcc http_server.c serversocket.c http-request.c fileops.c http-mimes.c -lpthread
@@ -18,14 +22,16 @@
  */
 
 char SITEPATH[512] = ""; //physical path of website on disk
+char HOME[512] = ""; //default index page
 int PORT = 80; //default port 80
 
 
 void *conn_handler(void *fd);
+void send_static_page(int client_fd, char *local_uri, long content_len);
 void send_error(int client_fd, int errcode);
 int is_valid_method(char *method);
 int load_global_config();
-
+int generate_header(char *header, char *body, char *mime_type, char *content_len);
 
 int main()
 {
@@ -50,16 +56,6 @@ int main()
     return 0;
 }
 
-//something wrong with std realloc()
-void *_realloc(void *ptr, size_t newsz)
-{
-    void *ret = malloc(newsz);
-    if (!ret) return NULL;
-    memcpy(ret, ptr, newsz);
-    free(ptr);
-    return ret;
-}
-
 
 //handle an incoming connection
 //return nothing
@@ -68,20 +64,21 @@ void *_realloc(void *ptr, size_t newsz)
 void *conn_handler(void *fd)
 {
     int client_fd = *(int*)fd;
-    int bytes_read = 0;
     int n = 0;
+    int bytes_read = 0;
     char buf[4096] = "";
-    char response[4096];
     char local_uri[1024] = "";
     char mime_type[128] = "";
     char header[1024] = "";
+    char content_len[16];
+    long sz;
     char *request = NULL;
     char *_new_request;
-
-    //printf("Client connected, fd: %d\n", client_fd);
+    //printf("Connection established, fd: %d\n", client_fd);
 
     //PROCESS HTTP REQUEST
-    /*if buf[sizeof(buf)] != 0, there's still more data*/
+    /*read data via TCP stream until NULL termination
+     *if buf[sizeof(buf)] != 0, there's still more data*/
     request = malloc(1);
     do {
         n = read_data(client_fd, buf, sizeof(buf));
@@ -96,13 +93,14 @@ void *conn_handler(void *fd)
     } while (buf[sizeof(buf)] != 0 && bytes_read < MAX_REQUEST_LEN); //if request is larger than 20MB then stop
     
     struct http_request req = process_request(request);
+    //TODO: handle url with parameters (e.g. site.com/change.py?n=11)
     //printf("method:%s\nuri:%s\nhttpver:%s\n", req.method, req.URI, req.httpver);
     //fflush(stdout);
 
-    //SERVE CLIENT REQUEST    
+    //SERVE CLIENT REQUEST
     //PROCESS URI (decode url, check privileges or if file exists)
     char decoded_uri[1024];
-    if (strcmp(req.URI, "/") == 0) strcpy(req.URI, "/index.html");
+    if (strcmp(req.URI, "/") == 0) strcpy(req.URI, HOME);
     decode_url(decoded_uri, req.URI); //decode url (%69ndex.html -> index.html)
 
     strcpy(local_uri, SITEPATH); //allow only resources in site directory
@@ -124,37 +122,113 @@ void *conn_handler(void *fd)
 
     //TODO: handle other methods like POST, PUT, HEAD..
 
-    //SEND HEADER
-    //TODO: better code to handle response header
     get_mime_type(mime_type, req.URI);
-    strcpy(header, "HTTP/1.1 200 OK\n");
-    strcat(header, "Content-Type: ");
-    strcat(header, mime_type);
-    strcat(header, "; charset=UTF-8");
-    strcat(header, "\r\n\r\n");
-    send_data(client_fd, header, strlen(header)); //send header
+    
+    //PROCESS DATA
+    //handle executable requests here
+    char interpreter[1024]; //path of interpreter program
+    int is_interpretable = file_get_interpreter(local_uri, interpreter, sizeof(interpreter));
+    if (is_interpretable == 0) { //uri is an executable file
+        /*call interpreter, pass request body as argument*/
+        char *p = local_uri;
+        char *args[] = {interpreter, p, req.body, NULL};
+        //if (req.body) printf("body %s\n", req.body);
+        //printf("interpreter:%s\nargs:%s\n%s\n", args[0], args[1], args[2]);
+        //fflush(stdout);
+        char *data = (char*)system_output(args, &sz, 100000);
+        sprintf(content_len, "%d\n", sz);
 
+        //generate header based on data returned from interpreter program
+        generate_header(header, data, mime_type, content_len);
+        char *doc = strstr(data, "<html");
+    
+        //begin sending data via TCP
+        send_data(client_fd, header, strlen(header)); //send header
+        send_data(client_fd, doc, sz - (doc - data)); //send document
+        free(data);
+    }
+    else { //uri is a static page
+        sz = file_get_size(local_uri);
+        strcpy(header, "HTTP/1.1 200 OK\n");
+        strcat(header, "Content-Type: ");
+        strcat(header, mime_type);
+        
+        strcat(header, "\nContent-Length: ");
+        sprintf(content_len, "%d", sz);
+        strcat(header, content_len);
 
-    //SEND BODY
-    long content_len = file_get_size(local_uri);
-    //printf("Content-length: %d\n", content_len);
-    int content_fd = open(local_uri, O_RDONLY); //get requested file content
-    int bytes_written = 0;
-    bytes_read = 0;
-
-    while (bytes_written < content_len) {
-        memset(response, 0, sizeof(response));
-        bytes_read = read(content_fd, response, sizeof(response)); //content body
-        bytes_written += send_data(client_fd, response, bytes_read);
-        if (bytes_written < 0) break; //error occurred, close fd and clean up;
+        strcat(header, "\r\n\r\n"); //mandatory blank line separating header
+        send_data(client_fd, header, strlen(header)); //send header
+        send_static_page(client_fd, local_uri, sz);
     }
 
-    close(content_fd);
+
     cleanup:
     //shutdown connection and free resources
     free(request);
     sock_cleanup(client_fd);
     return NULL;
+}
+
+
+int generate_header(char *header, char *body, char *mime_type, char *content_len)
+{
+    char buf[1024] = "";
+    char user_defined_header[1024] = "";
+    char httpver_final[32];
+    char *doc_begin;
+    char *n; //this will store linebreak
+    doc_begin = strstr(body, "\n<html");
+    memcpy(buf, body, doc_begin - body);
+    lowercase(user_defined_header, buf, sizeof(buf));
+
+    //printf("%d %s\n--\n", doc_begin - body, user_defined_header);
+    //fflush(stdout);
+    //define HTTP version if back-end doesn't specify
+    char *httpver = strstr(user_defined_header, "http/");
+    if (httpver) {
+        n = strstr(httpver, "\n");
+        if (n) {
+            uppercase(httpver_final, httpver, n - httpver);
+            strncat(header, httpver_final, n - httpver);
+            strcat(header, "\n");
+        }
+    }
+    else { 
+        strcpy(header, "HTTP/1.1 200 OK\n"); //default HTTP code
+    }
+
+    //define content-type if back-end does not
+    char *cont_type = strstr(user_defined_header, "content-type: ");
+    if (!cont_type) { //add content-type if backend doesn't specify
+        strcat(header, "content-type: ");
+        strcat(header, mime_type); //based on known MIME types
+        strcat(header, " ;charset=utf-8\n");
+    }
+    else {
+        n = strstr(cont_type, "\n");
+        if (n) {
+            strncat(header, cont_type, n - cont_type);
+            strcat(header, "\n");
+        }
+    }
+
+    //define location if backend specifies
+    char *location = strstr(user_defined_header, "location: ");
+    if (location) {
+        n = strstr(location, "\n");
+        if (n) {
+            strncat(header, location, n - location);
+            strcat(header, "\n");
+        }
+    }
+
+    //add content-length to header
+    strcat(header, "Content-Length: ");
+    strcat(header, content_len);
+    strcat(header, "server: mini-http-server\r\n\r\n");
+
+    return 0;
 }
 
 
@@ -167,6 +241,28 @@ int is_valid_method(char *method)
         if (strcmp(method, methods[i]) == 0) return 1;
     }
     return 0;
+}
+
+
+//read local_uri and write to client socket pointed to by client_fd
+void send_static_page(int client_fd, char *local_uri, long content_len)
+{
+    int bytes_read = 0;
+    char response[4096];
+    //printf("Content-length: %d\n", content_len);
+    printf("Res:%s\n", local_uri);
+    int content_fd = open(local_uri, O_RDONLY); //get requested file content
+    int bytes_written = 0;
+    bytes_read = 0;
+
+    while (bytes_written < content_len) {
+        memset(response, 0, sizeof(response));
+        bytes_read = read(content_fd, response, sizeof(response)); //content body
+        bytes_written += send_data(client_fd, response, bytes_read);
+        if (bytes_written < 0) break; //error occurred, close fd and clean up;
+    }
+
+    close(content_fd);
 }
 
 
@@ -208,7 +304,6 @@ int load_global_config()
     lnbreak = strstr(s, "\n");
     if (s == NULL) return -1; //no PATH config
     s += 5; //len of "PATH="
-    memset(SITEPATH, 0, sizeof(SITEPATH));
     memcpy(SITEPATH, s, lnbreak - s);
     if (!is_dir(SITEPATH)) return -2; //no PATH specified
     printf("%s\n", SITEPATH);
@@ -218,6 +313,13 @@ int load_global_config()
     if (s == NULL) return 0; //no PORT config, use default 80
     s += 5; //len of "PORT="
     PORT = atoi(s);
+
+    //HOME: default index page
+    s = strstr(buf, "HOME=");
+    if (s == NULL) return 0;
+    lnbreak = strstr(s, "\n");
+    s += 5;
+    memcpy(HOME, s, lnbreak - s);
 
     //other configs below
 

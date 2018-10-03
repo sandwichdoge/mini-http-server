@@ -13,9 +13,6 @@ struct http_request {
 //Return info about http request, must call cleanup_request() after use.
 struct http_request process_request(char *request);
 
-//Cleanup http request struct.
-int cleanup_request(struct http_request);
-
 //Convert URI code to real filename.
 void decode_url(char *out, char *url);
 #endif

@@ -22,7 +22,24 @@ int file_executable(char *path)
     return access(path, X_OK);
 }
 
-//check if file is regular or is directory
+//return path to interpreter otherwise return NULL if none is specified.
+int file_get_interpreter(char *path, char *out, size_t sz)
+{
+    char buf[1024] = "";
+    FILE *fd = fopen(path, "r");
+    if (fread(buf, 1, sizeof(buf), fd) < 0) return -1;
+    fclose(fd);
+
+    if (buf[0] != '#' || buf[1] != '!') return -1; //file is not for interpreting
+    for (int i = 0; buf[i+2] != '\n' && i < sz; ++i) {
+        out[i] = buf[i+2];
+    }
+    if (file_executable(out) < 0) return -1; //no such interpreter on system
+    
+    return 0;
+}
+
+//check if file is regular or is directory.
 int is_dir(char *path)
 {
     struct stat path_stat;
