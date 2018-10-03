@@ -7,6 +7,7 @@ struct http_request {
     char URI[1024];
     char httpver[16];
     char *body;
+    long body_len;
     int err;
 };
 

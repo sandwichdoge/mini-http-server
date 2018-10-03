@@ -22,12 +22,12 @@
  */
 
 char SITEPATH[512] = ""; //physical path of website on disk
-char HOME[512] = ""; //default index page
+char HOMEPAGE[512] = ""; //default index page
 int PORT = 80; //default port 80
 
 
 void *conn_handler(void *fd);
-void send_static_page(int client_fd, char *local_uri, long content_len);
+void serve_static_content(int client_fd, char *local_uri, long content_len);
 void send_error(int client_fd, int errcode);
 int is_valid_method(char *method);
 int load_global_config();
@@ -100,7 +100,7 @@ void *conn_handler(void *fd)
     //SERVE CLIENT REQUEST
     //PROCESS URI (decode url, check privileges or if file exists)
     char decoded_uri[1024];
-    if (strcmp(req.URI, "/") == 0) strcpy(req.URI, HOME);
+    if (strcmp(req.URI, "/") == 0) strcpy(req.URI, HOMEPAGE);
     decode_url(decoded_uri, req.URI); //decode url (%69ndex.html -> index.html)
 
     strcpy(local_uri, SITEPATH); //allow only resources in site directory
@@ -132,6 +132,7 @@ void *conn_handler(void *fd)
         /*call interpreter, pass request body as argument*/
         char *p = local_uri;
         char *args[] = {interpreter, p, req.body, NULL};
+        req.body[req.body_len] = 0;
         //if (req.body) printf("body %s\n", req.body);
         //printf("interpreter:%s\nargs:%s\n%s\n", args[0], args[1], args[2]);
         //fflush(stdout);
@@ -159,7 +160,7 @@ void *conn_handler(void *fd)
 
         strcat(header, "\r\n\r\n"); //mandatory blank line separating header
         send_data(client_fd, header, strlen(header)); //send header
-        send_static_page(client_fd, local_uri, sz);
+        serve_static_content(client_fd, local_uri, sz);
     }
 
 
@@ -177,10 +178,10 @@ int generate_header(char *header, char *body, char *mime_type, char *content_len
     char user_defined_header[1024] = "";
     char httpver_final[32];
     char *doc_begin;
-    char *n; //this will store linebreak
+    char *n; //this will store linebreak char
     doc_begin = strstr(body, "\n<html");
     memcpy(buf, body, doc_begin - body);
-    lowercase(user_defined_header, buf, sizeof(buf));
+    lowercase(user_defined_header, buf, doc_begin - body);
 
     //printf("%d %s\n--\n", doc_begin - body, user_defined_header);
     //fflush(stdout);
@@ -245,7 +246,7 @@ int is_valid_method(char *method)
 
 
 //read local_uri and write to client socket pointed to by client_fd
-void send_static_page(int client_fd, char *local_uri, long content_len)
+void serve_static_content(int client_fd, char *local_uri, long content_len)
 {
     int bytes_read = 0;
     char response[4096];
@@ -310,17 +311,21 @@ int load_global_config()
 
     //PORT: port to listen on (default 80)
     s = strstr(buf, "PORT=");
-    if (s == NULL) return 0; //no PORT config, use default 80
+    if (s == NULL) PORT = 80; //no PORT config, use default 80
     s += 5; //len of "PORT="
     PORT = atoi(s);
 
-    //HOME: default index page
+    //HOMEPAGE: default index page
     s = strstr(buf, "HOME=");
-    if (s == NULL) return 0;
-    lnbreak = strstr(s, "\n");
-    s += 5;
-    memcpy(HOME, s, lnbreak - s);
-
+    if (s == NULL) {
+        strcpy(HOMEPAGE, "/index.html");
+    }
+    else {
+        lnbreak = strstr(s, "\n");
+        s += 5;
+        memcpy(HOMEPAGE, s, lnbreak - s);
+    }
+    
     //other configs below
 
     return 0;
