@@ -43,17 +43,17 @@ struct http_request process_request(char *request)
 
     //Protocol/ HTTP version
     char *httpver ;
-    if (!URI) { //no uri specified from client, search from beginning of request for protocol info
-        httpver = NULL; //shouldn't happen unless client sends niggerlicious requests like 'GET' with no additional info
+    if (!URI) { //no uri or anything specified from client,
+        httpver = NULL; //shouldn't happen unless client sends niggerlicious requests like just 'GET' with no additional info
     }
     else {
         httpver = strstr(URI + uri_len, "HTTP/");
     }
     if (httpver) {
-        strncpy(ret.httpver, httpver, 8);
+        strncpy(ret.httpver, httpver, strchr(httpver, '\n') - httpver);
     }
     else {
-        strncpy(ret.httpver, "HTTP/1.1", 8); //use default HTTP ver
+        strcpy(ret.httpver, "HTTP/1.1"); //use default HTTP ver
     }
 
     /*next line of http header
@@ -78,7 +78,6 @@ struct http_request process_request(char *request)
             ret.body_len = strlen(body);
         }
     }
-    
     
     return ret;
 }

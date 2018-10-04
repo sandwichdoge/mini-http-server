@@ -67,7 +67,7 @@ void *conn_handler(void *fd)
     int n = 0;
     int bytes_read = 0;
     char buf[4096] = "";
-    char local_uri[1024] = "";
+    char local_uri[2048] = "";
     char mime_type[128] = "";
     char header[1024] = "";
     char content_len[16];
@@ -76,10 +76,11 @@ void *conn_handler(void *fd)
     char *_new_request;
     //printf("Connection established, fd: %d\n", client_fd);
 
-    //PROCESS HTTP REQUEST
-    /*read data via TCP stream until NULL termination
+    //PROCESS HTTP REQUEST FROM CLIENT
+    /*read data via TCP stream
+     *keep reading and allocating memory for new data until NULL or 20MB max reached
      *if buf[sizeof(buf)] != 0, there's still more data*/
-    request = malloc(1);
+    request = malloc(1); //request points to new data, must be freed during cleanup
     do {
         n = read_data(client_fd, buf, sizeof(buf));
         if (n == -1) {
@@ -87,20 +88,17 @@ void *conn_handler(void *fd)
         }
         bytes_read += n;
         _new_request = (char*)_realloc(request, bytes_read);
-        if (_new_request) request = _new_request;
-        else goto cleanup; //out of memory
-        memcpy(request + bytes_read - n, buf, n); //append data from tcp stream to request
-    } while (buf[sizeof(buf)] != 0 && bytes_read < MAX_REQUEST_LEN); //if request is larger than 20MB then stop
+        if (_new_request == NULL) goto cleanup; //out of memory
+        request = _new_request;
+        memcpy(request + bytes_read - n, buf, n); //append data from tcp stream to *request
+    } while (buf[sizeof(buf)] != 0 && bytes_read < MAX_REQUEST_LEN); //stop if request is larger than 20MB or reached NULL
     
-    struct http_request req = process_request(request);
-    //TODO: handle url with parameters (e.g. site.com/change.py?n=11)
-    //printf("method:%s\nuri:%s\nhttpver:%s\n", req.method, req.URI, req.httpver);
-    //fflush(stdout);
+    struct http_request req = process_request(request); //process returned data
 
     //SERVE CLIENT REQUEST
     //PROCESS URI (decode url, check privileges or if file exists)
-    char decoded_uri[1024];
-    if (strcmp(req.URI, "/") == 0) strcpy(req.URI, HOMEPAGE);
+    char decoded_uri[2048];
+    if (strcmp(req.URI, "/") == 0) strcpy(req.URI, HOMEPAGE); //when URI is "/", e.g. GET / HTTP/1.1
     decode_url(decoded_uri, req.URI); //decode url (%69ndex.html -> index.html)
 
     strcpy(local_uri, SITEPATH); //allow only resources in site directory
@@ -120,7 +118,7 @@ void *conn_handler(void *fd)
         goto cleanup;
     }
 
-    //TODO: handle other methods like POST, PUT, HEAD..
+    //TODO: gzip content, handle other methods like PUT, HEAD, DELETE..
 
     get_mime_type(mime_type, req.URI);
     
@@ -128,16 +126,13 @@ void *conn_handler(void *fd)
     //handle executable requests here
     char interpreter[1024]; //path of interpreter program
     int is_interpretable = file_get_interpreter(local_uri, interpreter, sizeof(interpreter));
-    if (is_interpretable == 0) { //uri is an executable file
+    if (is_interpretable == 0) { //CASE 1: uri is an executable file
         /*call interpreter, pass request body as argument*/
         char *p = local_uri;
         char *args[] = {interpreter, p, req.body, NULL};
         req.body[req.body_len] = 0;
-        //if (req.body) printf("body %s\n", req.body);
-        //printf("interpreter:%s\nargs:%s\n%s\n", args[0], args[1], args[2]);
-        //fflush(stdout);
         char *data = (char*)system_output(args, &sz, 100000);
-        sprintf(content_len, "%d\n", sz);
+        sprintf(content_len, "%d\n", sz); //equivalent to itoa(content_len)
 
         //generate header based on data returned from interpreter program
         generate_header(header, data, mime_type, content_len);
@@ -148,7 +143,7 @@ void *conn_handler(void *fd)
         send_data(client_fd, doc, sz - (doc - data)); //send document
         free(data);
     }
-    else { //uri is a static page
+    else { //CASE 2: uri is a static page
         sz = file_get_size(local_uri);
         strcpy(header, "HTTP/1.1 200 OK\n");
         strcat(header, "Content-Type: ");
