@@ -87,7 +87,7 @@ void *conn_handler(void *fd)
             goto cleanup;
         }
         bytes_read += n;
-        _new_request = (char*)_realloc(request, bytes_read);
+        _new_request = (char*)realloc(request, bytes_read);
         if (_new_request == NULL) goto cleanup; //out of memory
         request = _new_request;
         memcpy(request + bytes_read - n, buf, n); //append data from tcp stream to *request
@@ -130,7 +130,7 @@ void *conn_handler(void *fd)
         /*call interpreter, pass request body as argument*/
         char *p = local_uri;
         char *args[] = {interpreter, p, req.body, NULL};
-        req.body[req.body_len] = 0;
+        if (req.body_len) req.body[req.body_len] = 0; //NULL terminate upon GET with params, if it's POST, no body_len is returned
         char *data = (char*)system_output(args, &sz, 100000);
         sprintf(content_len, "%d\n", sz); //equivalent to itoa(content_len)
 

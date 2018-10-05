@@ -1,14 +1,3 @@
-//something wrong with std realloc()
-void *_realloc(void *ptr, size_t newsz)
-{
-    void *ret = malloc(newsz);
-    if (!ret) return NULL;
-    memcpy(ret, ptr, newsz);
-    free(ptr);
-    return ret;
-}
-
-
 /*system_output()
  *execute external program and return its output.
  *args          : array of strings of program to call and arguments to pass, must be null terminated
@@ -47,7 +36,7 @@ void* system_output(char **args, long *output_sz, int time_out_ms)
             if (pid_s > 0) brkflag = 1; //child exited, read from buf 1 last time then break
             bytes_read_last = read(fds[0], buf, sizeof(buf));
             if (bytes_read_last > 0) {
-                output = _realloc(output, bytes_read_total + bytes_read_last);
+                output = realloc(output, bytes_read_total + bytes_read_last);
                 if (output == NULL) break; //out of memory
                 memcpy(output + bytes_read_total, buf, bytes_read_last); //concatenate new data
                 bytes_read_total += bytes_read_last;
