@@ -210,8 +210,10 @@ int generate_header(char *header, char *body, char *mime_type, char *content_len
 
     /*char *location = strstr(user_defined_header, "set-cookie: ");*/
 
-
     //add content-length to header
+    if (header[strlen(header)] != '\n') {
+        strcat(header, "\n");
+    }
     strcat(header, "Content-Length: ");
     strcat(header, content_len);
     strcat(header, "server: mini-http-server\r\n\r\n");
