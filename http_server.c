@@ -130,19 +130,27 @@ void *conn_handler(void *fd)
     if (is_interpretable == 0) { //CASE 1: uri is an executable file
         /*call interpreter, pass request body as argument*/
         char *p = local_uri;
-        char *args[] = {interpreter, p, req.body, NULL};
+        char *args[] = {interpreter, p, req.body, req.cookie, NULL};
         if (req.body_len) req.body[req.body_len] = 0; //NULL terminate upon GET with params, if it's POST, no body_len is returned
         char *data = (char*)system_output(args, &sz, 100000);
         sprintf(content_len, "%d\n", sz); //equivalent to itoa(content_len)
 
         //generate header based on data returned from interpreter program
         generate_header(header, data, mime_type, content_len);
-        printf("%s\n", header);
-        char *doc = strstr(data, "<html");
-    
-        //begin sending data via TCP
-        send_data(client_fd, header, strlen(header)); //send header
-        send_data(client_fd, doc, sz - (doc - data)); //send document
+
+        //determine where the body is in returned data and send it to client
+        char *doc;
+        while (1) {
+            doc = strstr(data, "\r\n\r\n");
+            if (doc != NULL) break;
+            doc = strstr(data, "\n\n");
+            break;
+        }
+        if (doc) {
+            //begin sending data via TCP
+            send_data(client_fd, header, strlen(header)); //send header
+            send_data(client_fd, doc, sz - (doc - data)); //send document
+        }
         free(data);
     }
     else { //CASE 2: uri is a static page
@@ -208,11 +216,10 @@ int generate_header(char *header, char *body, char *mime_type, char *content_len
         str_insert(header, 0, "HTTP/1.1 200 OK\n"); //default HTTP code
     }
 
-    /*char *location = strstr(user_defined_header, "set-cookie: ");*/
 
     //add content-length to header
-    if (header[strlen(header)] != '\n') {
-        strcat(header, "\n");
+    if (header[strlen(header) - 1] != '\n') { //if backend doesnt conclude their header with \n\n, do it for them
+        strcat(header, "\r\n");
     }
     strcat(header, "Content-Length: ");
     strcat(header, content_len);
@@ -239,8 +246,6 @@ void serve_static_content(int client_fd, char *local_uri, long content_len)
 {
     int bytes_read = 0;
     char response[4096];
-    //printf("Content-length: %d\n", content_len);
-    printf("Res:%s\n", local_uri);
     int content_fd = open(local_uri, O_RDONLY); //get requested file content
     int bytes_written = 0;
     bytes_read = 0;

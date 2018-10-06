@@ -3,11 +3,12 @@
 #include <string.h>
 #include <stdlib.h>
 struct http_request {
-    char method[8];
-    char URI[1024];
+    char cookie[4096];
+    char URI[2048];
     char httpver[16];
     char *body;
     long body_len;
+    char method[8];
     int err;
 };
 

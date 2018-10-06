@@ -8,11 +8,13 @@ struct http_request process_request(char *request)
     int method_len = 0;
     int uri_len = 0;
     int is_GET_with_params = 0;
+    char *n; //this will contain linebreak char
 
     /*HEADER SECTION*/
     memset(ret.URI, 0, sizeof(ret.URI));
     memset(ret.method, 0, sizeof(ret.method));
     memset(ret.httpver, 0, sizeof(ret.httpver));
+    memset(ret.cookie, 0, sizeof(ret.cookie));
     ret.body_len = 0;
 
     //method; method_len = len of method string
@@ -42,7 +44,7 @@ struct http_request process_request(char *request)
     }
 
     //Protocol/ HTTP version
-    char *httpver ;
+    char *httpver;
     if (!URI) { //no uri or anything specified from client,
         httpver = NULL; //shouldn't happen unless client sends niggerlicious requests like just 'GET' with no additional info
     }
@@ -56,6 +58,18 @@ struct http_request process_request(char *request)
         strcpy(ret.httpver, "HTTP/1.1"); //use default HTTP ver
     }
 
+    //Cookie
+    char *cookie;
+    cookie = strstr(request, "Cookie: ") + 8; //8 = len of "Cookie: "
+    if (cookie) {
+        n = strchr(cookie, '\n');
+        if (n) {
+            int cookie_len = n - cookie;
+            strncpy(ret.cookie, cookie, cookie_len);
+            printf("%s\n", ret.cookie);
+            fflush(stdout);
+        }
+    }
     /*next line of http header
     i.e. accept-encoding, user-agent, referer, accept-language*/
     //char *header_fields = strchr(request, '\n') + 1;
@@ -68,7 +82,7 @@ struct http_request process_request(char *request)
     if (is_GET_with_params) { //handle GET form submit.py?age=18
         ret.body = URI_end + 1; //point body to end of local resource path (submit.py?), URI_end points to '?' in this case
         request[URI + uri_len - request] = 0; //terminate the part after uri (submit.py?age=18NULL)
-        ret.body_len = strchr(URI_end, ' ') - URI_end;
+        ret.body_len = strchr(URI_end, ' ') - (URI_end +1); //URI_end+1 is start of argument fields
     }
     else {
         body = strstr(request, "\r\n\r\n");
