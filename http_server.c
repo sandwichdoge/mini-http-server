@@ -11,6 +11,7 @@
 #include "http-mimes.h"
 #include "sysout.h"
 #include "casing.h" //uppercase() and lowercase()
+#include "strinsert.h" //strinsert()
 
 #define MAX_REQUEST_LEN 20*1000*1024
 
@@ -118,7 +119,7 @@ void *conn_handler(void *fd)
         goto cleanup;
     }
 
-    //TODO: gzip content, handle other methods like PUT, HEAD, DELETE..
+    //TODO: cookie, gzip content, handle other methods like PUT, HEAD, DELETE..
 
     get_mime_type(mime_type, req.URI);
     
@@ -136,6 +137,7 @@ void *conn_handler(void *fd)
 
         //generate header based on data returned from interpreter program
         generate_header(header, data, mime_type, content_len);
+        printf("%s\n", header);
         char *doc = strstr(data, "<html");
     
         //begin sending data via TCP
@@ -167,6 +169,8 @@ void *conn_handler(void *fd)
 }
 
 
+//body includes everything that backend script prints out, not just html content
+//*header is the processed output
 int generate_header(char *header, char *body, char *mime_type, char *content_len)
 {
     char buf[1024] = "";
@@ -180,44 +184,32 @@ int generate_header(char *header, char *body, char *mime_type, char *content_len
 
     //printf("%d %s\n--\n", doc_begin - body, user_defined_header);
     //fflush(stdout);
+
+    strcpy(header, user_defined_header);
+
+    //define content-type if back-end does not
+    char *cont_type = strstr(user_defined_header, "content-type: ");
+    if (!cont_type) {
+        str_insert(header, 0, "content-type: ");
+        str_insert(header, 14,mime_type); //based on known MIME types
+        str_insert(header, strlen("content-type: ") + strlen(mime_type) ," ;charset=utf-8\n");
+    }
+
     //define HTTP version if back-end doesn't specify
     char *httpver = strstr(user_defined_header, "http/");
     if (httpver) {
         n = strstr(httpver, "\n");
         if (n) {
-            uppercase(httpver_final, httpver, n - httpver);
-            strncat(header, httpver_final, n - httpver);
-            strcat(header, "\n");
+            uppercase(httpver_final, httpver, n - httpver + 1); //n-httpver: len of httpver line
+            memcpy(header, httpver_final, n - httpver + 1); //copy \n as well
         }
     }
     else { 
-        strcpy(header, "HTTP/1.1 200 OK\n"); //default HTTP code
+        str_insert(header, 0, "HTTP/1.1 200 OK\n"); //default HTTP code
     }
 
-    //define content-type if back-end does not
-    char *cont_type = strstr(user_defined_header, "content-type: ");
-    if (!cont_type) { //add content-type if backend doesn't specify
-        strcat(header, "content-type: ");
-        strcat(header, mime_type); //based on known MIME types
-        strcat(header, " ;charset=utf-8\n");
-    }
-    else {
-        n = strstr(cont_type, "\n");
-        if (n) {
-            strncat(header, cont_type, n - cont_type);
-            strcat(header, "\n");
-        }
-    }
+    /*char *location = strstr(user_defined_header, "set-cookie: ");*/
 
-    //define location if backend specifies
-    char *location = strstr(user_defined_header, "location: ");
-    if (location) {
-        n = strstr(location, "\n");
-        if (n) {
-            strncat(header, location, n - location);
-            strcat(header, "\n");
-        }
-    }
 
     //add content-length to header
     strcat(header, "Content-Length: ");

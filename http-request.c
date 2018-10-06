@@ -65,9 +65,9 @@ struct http_request process_request(char *request)
 
     /*BODY SECTION*/
     char *body;
-    if (is_GET_with_params) { //handle GET form handler.py?age=18
-        ret.body = URI_end + 1; //point body to end of local resource path (handler.py?), URI_end points to '?' in this case
-        request[URI + uri_len - request] = 0; //terminate the part after uri (handler.py?age=18NULL)
+    if (is_GET_with_params) { //handle GET form submit.py?age=18
+        ret.body = URI_end + 1; //point body to end of local resource path (submit.py?), URI_end points to '?' in this case
+        request[URI + uri_len - request] = 0; //terminate the part after uri (submit.py?age=18NULL)
         ret.body_len = strchr(URI_end, ' ') - URI_end;
     }
     else {
@@ -75,7 +75,7 @@ struct http_request process_request(char *request)
         if (body) {
             body += 4; //strip preceding blank line
             ret.body = body;
-            ret.body_len = strlen(body);
+            //ret.body_len = strlen(body);
         }
     }
     
