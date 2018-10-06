@@ -31,9 +31,9 @@ f = open('msg.txt', 'w+')
 f.write(msg)
 f.close()
 
-print "HTTP/1.1 307 TEMPORARY REDIRECT\n"
-print 'Location: /index.py\n'
-print 'Content-Type: text/html; charset=utf-8\n\n'
+print "HTTP/1.1 307 TEMPORARY REDIRECT"
+print 'Location: /index.py'
+print 'Content-Type: text/html; charset=utf-8\n'
 print "<html>"
 print "Updated MOTD.<br/>"
 print '<a href="/index.py">Click here to go back</a>'

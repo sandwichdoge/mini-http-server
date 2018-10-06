@@ -12,7 +12,7 @@ def readMsgOfTheDay():
 
 content = readMsgOfTheDay()
 
-print "Content-Type: text/html;\n\n"
+print "Content-Type: text/html;\n"
 print "<html>"
 print '<br/>'
 print '<style>'
@@ -36,7 +36,7 @@ print '}'
 print '</style>'
 print ''
 print '<center>'
-print '<form action = "/change-msg-submit.py" method = "post">'
+print '<form action = "/change-msg-submit.py" method = "get">'
 print 'New Message: <input type = "text" name = "msg">'
 print '<input type = "submit" value = "Update"/>'
 print '</form><br/>'
