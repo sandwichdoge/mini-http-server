@@ -66,15 +66,11 @@ struct http_request process_request(char *request)
         if (n) {
             int cookie_len = n - cookie;
             strncpy(ret.cookie, cookie, cookie_len);
-            printf("%s\n", ret.cookie);
             fflush(stdout);
         }
     }
     /*next line of http header
     i.e. accept-encoding, user-agent, referer, accept-language*/
-    //char *header_fields = strchr(request, '\n') + 1;
-    //printf("%s\n", request);
-    //fflush(stdout);
 
 
     /*BODY SECTION*/
@@ -82,7 +78,7 @@ struct http_request process_request(char *request)
     if (is_GET_with_params) { //handle GET form submit.py?age=18
         ret.body = URI_end + 1; //point body to end of local resource path (submit.py?), URI_end points to '?' in this case
         request[URI + uri_len - request] = 0; //terminate the part after uri (submit.py?age=18NULL)
-        ret.body_len = strchr(URI_end, ' ') - (URI_end +1); //URI_end+1 is start of argument fields
+        ret.body_len = strchr(ret.body, ' ') - (ret.body); //URI_end+1 is start of argument fields
     }
     else {
         body = strstr(request, "\r\n\r\n");
