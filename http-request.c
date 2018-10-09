@@ -59,14 +59,13 @@ struct http_request process_request(char *request)
     }
 
     //Cookie
-    char *cookie;
-    cookie = strstr(request, "Cookie: ") + 8; //8 = len of "Cookie: "
+    char *cookie = strstr(request, "Cookie: "); 
     if (cookie) {
+        cookie += 8; //8 = len of "Cookie: "
         n = strchr(cookie, '\n');
         if (n) {
             int cookie_len = n - cookie;
             strncpy(ret.cookie, cookie, cookie_len);
-            fflush(stdout);
         }
     }
     /*next line of http header
