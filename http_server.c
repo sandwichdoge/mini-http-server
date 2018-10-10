@@ -36,14 +36,19 @@ int generate_header(char *header, char *body, char *mime_type, char *content_len
 
 int main()
 {
-    int new_fd = 0;
+    int new_fd = 0; //session fd between client and server
     struct server_socket sock = create_server_socket(PORT);
     pthread_t pthread;
-    if (load_global_config() < 0) {
-        printf("Fatal error in http.conf\n");
-        return -1;
+    int config_errno = load_global_config();
+    switch (config_errno) {
+        case -1:
+            printf("Fatal error in http.conf: No PATH parameter specified.\n");
+            return -1;
+        case -2:
+            printf("Fatal error in http.conf: Invalid SITEPATH parameter.\n");
+            return -1;
     }
-
+    
     printf("Started HTTP server on port %d..\n", PORT);
     while (1) {
         new_fd = accept(sock.fd, (struct sockaddr*)sock.handle, &sock.len);
@@ -93,7 +98,7 @@ void *conn_handler(void *fd)
         request = _new_request;
         memcpy(request + bytes_read - n, buf, n); //append data from tcp stream to *request
     } while (buf[sizeof(buf)] != 0 && bytes_read < MAX_REQUEST_LEN); //stop if request is larger than 20MB or reached NULL
-    
+
     struct http_request req = process_request(request); //process returned data
 
     //SERVE CLIENT REQUEST
@@ -127,12 +132,18 @@ void *conn_handler(void *fd)
     //handle executable requests here
     char interpreter[1024]; //path of interpreter program
     int is_interpretable = file_get_interpreter(local_uri, interpreter, sizeof(interpreter));
-    if (is_interpretable == 0) { //CASE 1: uri is an executable file
+    if (is_interpretable > 0) { //CASE 1: uri is an executable file
         /*call interpreter, pass request body as argument*/
         char *p = local_uri;
         char *args[] = {interpreter, p, req.body, req.cookie, NULL};
         if (req.body_len) req.body[req.body_len] = 0; //NULL terminate upon GET with params, if it's POST, no body_len is returned
-        char *data = (char*)system_output(args, &sz, 100000);
+        int ret_code;
+        char *data = (char*)system_output(args, &sz, &ret_code, 100000);
+        if (ret_code < 0) { //if there's error in backend script, send err500 and skip sending returned data
+            send_error(client_fd, 500);
+            goto cleanup_data;
+        }
+
         sprintf(content_len, "%d\n", sz); //equivalent to itoa(content_len)
 
         //generate header based on data returned from interpreter program
@@ -151,9 +162,10 @@ void *conn_handler(void *fd)
             send_data(client_fd, header, strlen(header)); //send header
             send_data(client_fd, doc, sz - (doc - data)); //send document
         }
+        cleanup_data:
         free(data);
     }
-    else { //CASE 2: uri is a static page
+    else if(is_interpretable == 0) { //CASE 2: uri is a static page
         sz = file_get_size(local_uri);
         strcpy(header, "HTTP/1.1 200 OK\n");
         strcat(header, "Content-Type: ");
@@ -167,7 +179,9 @@ void *conn_handler(void *fd)
         send_data(client_fd, header, strlen(header)); //send header
         serve_static_content(client_fd, local_uri, sz);
     }
-
+    else { //error reading requested data or system can't interpret requested script
+        send_error(client_fd, 500);
+    }
 
     cleanup:
     //shutdown connection and free resources
@@ -266,6 +280,7 @@ void send_error(int client_fd, int errcode)
     char err404[] = "HTTP/1.1 404 NOT FOUND\nContent-Type: text/html; charset=UTF-8\r\n\r\n404\nResource not found on server.\n";
     char err403[] = "HTTP/1.1 403 FORBIDDEN\nContent-Type: text/html; charset=UTF-8\r\n\r\n403\nNot enough privilege to access resource.\n";
     char err400[] = "HTTP/1.1 400 BAD REQUEST\nContent-Type: text/html; charset=UTF-8\r\n\r\n400\nBad request.\n";
+    char err500[] = "HTTP/1.1 500 INTERNAL SERVER ERROR\nContent-Type: text/html; charset=UTF-8\r\n\r\n500\nInternal Error.\n";
 
     switch (errcode) {
         case 404:
@@ -300,8 +315,7 @@ int load_global_config()
     if (s == NULL) return -1; //no PATH config
     s += 5; //len of "PATH="
     memcpy(SITEPATH, s, lnbreak - s);
-    if (!is_dir(SITEPATH)) return -2; //no PATH specified
-    printf("%s\n", SITEPATH);
+    if (!is_dir(SITEPATH)) return -2; //invalid SITEPATH
 
     //PORT: port to listen on (default 80)
     s = strstr(buf, "PORT=");

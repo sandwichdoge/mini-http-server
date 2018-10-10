@@ -6,7 +6,7 @@
  *time_out  : time out in miliseconds. 
  *CALLER IS RESPONSIBLE FOR FREEING RETURNED MEMORY AFTER USE
  */
-void* system_output(char **args, long *output_sz, int time_out_ms)
+void* system_output(char **args, long *output_sz, int *retcode, int time_out_ms)
 {
     int fds[2];
     int buf[4096];
@@ -23,7 +23,7 @@ void* system_output(char **args, long *output_sz, int time_out_ms)
         execvp(args[0], args);  //child process will now be cannibalized
     }
     else {  //is parent
-        int ret_code;  //exit code of child process
+        int ret_code = -1;  //exit code of child process
         long bytes_read_total = 0;
         long bytes_read_last = 0;
         int brkflag = 0; //if flag is 1 when in loop, read buffer 1 last time then break
@@ -47,6 +47,7 @@ void* system_output(char **args, long *output_sz, int time_out_ms)
         }
         close(fds[0]);
         close(fds[1]);
+        *retcode = ret_code;
         *output_sz = bytes_read_total;
         return output; //caller needs to free() this
     }

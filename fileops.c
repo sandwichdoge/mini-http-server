@@ -22,7 +22,12 @@ int file_executable(char *path)
     return access(path, X_OK);
 }
 
-//return path to interpreter otherwise return NULL if none is specified.
+/*return path to interpreter in *out buffer.
+*return code:
+*0: file is not interpretable
+*1: file is interpretable and interpreter exists on system
+*-1: error reading file
+*-2: interpretable file but interpreter does not exist on system*/
 int file_get_interpreter(char *path, char *out, size_t sz)
 {
     char buf[1024] = "";
@@ -30,13 +35,13 @@ int file_get_interpreter(char *path, char *out, size_t sz)
     if (fread(buf, 1, sizeof(buf), fd) < 0) return -1;
     fclose(fd);
 
-    if (buf[0] != '#' || buf[1] != '!') return -1; //file is not for interpreting
+    if (buf[0] != '#' || buf[1] != '!') return 0; //file is not for interpreting
     for (int i = 0; buf[i+2] != '\n' && i < sz; ++i) {
         out[i] = buf[i+2];
     }
-    if (file_executable(out) < 0) return -1; //no such interpreter on system
+    if (file_executable(out) < 0) return -2; //no such interpreter on system
     
-    return 0;
+    return 1;
 }
 
 //check if file is regular or is directory.
