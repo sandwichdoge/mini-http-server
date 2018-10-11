@@ -101,6 +101,7 @@ void *conn_handler(void *fd)
 
     struct http_request req = process_request(request); //process returned data
 
+
     //SERVE CLIENT REQUEST
     //PROCESS URI (decode url, check privileges or if file exists)
     char decoded_uri[2048];
@@ -125,7 +126,6 @@ void *conn_handler(void *fd)
     }
 
     //TODO: cookie, gzip content, handle other methods like PUT, HEAD, DELETE..
-
     get_mime_type(mime_type, req.URI);
     
     //PROCESS DATA

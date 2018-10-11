@@ -5,10 +5,11 @@ void get_mime_type(char *out, char *uri)
     static char *mime_types[][2] = {{".html", "text/html"}, {".css", "text/css"},
     {".txt", "text/plain"}, {".py", "text/html"},
     {".jpg", "image/jpeg"}, {".jpeg", "image/jpeg"}, {".png", "image/png"}, {".bmp", "image/bmp"}, {".gif", "image/gif"},
-    {".ico", "image/x-icon"},
+    {".ico", "image/x-icon"}, {".svg", "image/svg+xml"},
     {".oga", "audio/ogg"}, {".wav", "audio/wav"}, {".mp3", "audio/mpeg"},
     {".mp4", "video/mp4"}, {".webm", "video/webm"}, 
     {".swf", "application/x-shockwave-flash"},
+    {".ttf", "application/octet-stream"},
     {".pdf", "application/pdf"}, {".ppt", "application/vnd.ms-powerpoint"},
     {".js", "application/javascript"}, {".json", "application/json"}};
     int total_mimes = sizeof(mime_types) / sizeof(mime_types[0]);
