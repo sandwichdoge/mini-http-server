@@ -37,9 +37,9 @@ int generate_header(char *header, char *body, char *mime_type, char *content_len
 int main()
 {
     int new_fd = 0; //session fd between client and server
+    int config_errno = load_global_config();
     struct server_socket sock = create_server_socket(PORT);
     pthread_t pthread;
-    int config_errno = load_global_config();
     switch (config_errno) {
         case -1:
             printf("Fatal error in http.conf: No PATH parameter specified.\n");
