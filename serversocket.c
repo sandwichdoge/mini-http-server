@@ -34,6 +34,7 @@ int read_data(int client_fd, char *buf, size_t bufsize)
 {
     memset(buf, bufsize, 0);
     return read(client_fd, buf, bufsize);
+    
 }
 
 
@@ -43,17 +44,34 @@ int send_data(int client_fd, char *data, size_t len)
     int bytes_written = 0;
     while (bytes_written < len) { //in case of traffic congestion
         bytes_written += write(client_fd, data, len - bytes_written); //send tcp response
-        if (bytes_written == -1) break; //error sending data to client
+        if (bytes_written < 0) break; //error sending data to client
     }
+
     return bytes_written;
 }
 
 
+int read_data_ssl(SSL *SSL_conn, char *buf, size_t bufsize)
+{
+    memset(buf, bufsize, 0);
+    return SSL_read(SSL_conn, buf, bufsize);
+}
+
+
+int send_data_ssl(SSL *SSL_conn, char *data, size_t len)
+{
+    int bytes_written = 0;
+    while (bytes_written < len) { //in case of traffic congestion
+        bytes_written += SSL_write(SSL_conn, data, len);
+        if (bytes_written < 0) break; //error sending data to client
+    }
+
+    return bytes_written;
+}
+
  //close connection and clean up resources
 void sock_cleanup(int client_fd)
 {
-    //printf("Disconnecting client: %d\n", client_fd);
-    //fflush(stdout);
     shutdown(client_fd, 2); //shutdown connection
     close(client_fd);
 }
