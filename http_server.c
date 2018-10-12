@@ -9,6 +9,7 @@
 #include "http-request.h"
 #include "fileops.h"
 #include "http-mimes.h"
+#include "http-ssl.h"
 #include "sysout.h"
 #include "casing.h" //uppercase() and lowercase()
 #include "strinsert.h" //strinsert()
@@ -21,25 +22,48 @@
  *socket() -> setsocketopt() -> bind() -> listen() -> accept()
  *then read/write into socket returned by accept()
  */
-
-char SITEPATH[512] = ""; //physical path of website on disk
-char HOMEPAGE[512] = ""; //default index page
-int PORT = 80; //default port 80
-
+/*Implementing OpenSSL server in C:
+ *Initialize SSL - SSL_library_init(), load_error_strings(), OpenSSL_add_all_algorithms()
+ *Create CTX: SSL_CTX_new(method()) -> SSL_CTX_set_options()
+ *SSL_CTX_use_certificate_file(), SSL_CTX_use_PrivateKey_file() -> SSL_CTX_check_private_key() to validate
+ *---And we're done with global initialization---
+ *---Connection ahead, require a client fd returned from accept() syscall---
+ *ssl_connection = SSL_new(), ssl_set_fd() to link client_fd with ssl_connection
+ *ssl_accept() to wait for client to initiate handshake, non-block I/O client_fd to implement timeout otherwise it'll hang on bad requests
+ */
 
 void *conn_handler(void *fd);
-void serve_static_content(int client_fd, char *local_uri, long content_len);
-void send_error(int client_fd, int errcode);
+void serve_static_content(int client_fd, char *local_uri, long content_len, SSL *conn_SSL);
+void http_send_error(int client_fd, int errcode, SSL *conn_SSL);
 int is_valid_method(char *method);
 int load_global_config();
 int generate_header(char *header, char *body, char *mime_type, char *content_len);
 
+typedef struct client_info {
+    int is_ssl;
+    int client_fd;
+} client_info;
+
+char SITEPATH[512] = ""; //physical path of website on disk
+char HOMEPAGE[512] = ""; //default index page
+char CERT_PUB_KEY_FILE[512];
+char CERT_PRIV_KEY_FILE[512];
+int PORT = 80; //default port 80
+int PORT_SSL = 443; //default port for SSL is 443
+SSL *conn_SSL;
+SSL_CTX *CTX;
+
+
 int main()
 {
-    int new_fd = 0; //session fd between client and server
+    int http_fd= 0, ssl_fd = 0; //session fd between client and server
     int config_errno = load_global_config();
     struct server_socket sock = create_server_socket(PORT);
+    struct server_socket sock_ssl = create_server_socket(PORT_SSL);
+    client_info args;
+
     pthread_t pthread;
+
     switch (config_errno) {
         case -1:
             printf("Fatal error in http.conf: No PATH parameter specified.\n");
@@ -49,16 +73,47 @@ int main()
             return -1;
     }
     
-    printf("Started HTTP server on port %d..\n", PORT);
-    while (1) {
-        new_fd = accept(sock.fd, (struct sockaddr*)sock.handle, &sock.len);
-        if (new_fd > 0) {
-            pthread_create(&pthread, NULL, conn_handler, &new_fd); //create a thread for each new connection
-            usleep(2000); //handle racing condition
+    initialize_SSL();
+    CTX = SSL_CTX_new(TLS_server_method());
+    if (!CTX) {
+        printf("Error creating CTX.\n");
+    }
+    SSL_CTX_set_options(CTX, SSL_OP_SINGLE_DH_USE);
+
+    SSL_CTX_use_certificate_file(CTX, CERT_PUB_KEY_FILE , SSL_FILETYPE_PEM);
+    SSL_CTX_use_PrivateKey_file(CTX, CERT_PRIV_KEY_FILE, SSL_FILETYPE_PEM);
+    if (!SSL_CTX_check_private_key(CTX)) {
+        fprintf(stderr,"SSL WARNING: Private key does not match certificate public key.\n");
+    }
+    
+    printf("Started HTTP server on port %d and %d..\n", PORT, PORT_SSL);
+    pid_t pid = fork(); //1 thread for HTTP, 1 for HTTPS
+    if (pid == 0) {
+        while (1) {
+            ssl_fd = accept(sock_ssl.fd, (struct sockaddr*)sock_ssl.handle, &sock_ssl.len);
+            if (ssl_fd> 0) {
+                args.is_ssl = 1;
+                args.client_fd = ssl_fd;
+                pthread_create(&pthread, NULL, conn_handler, (void*)&args); //create a thread for each new connection
+            }
+            usleep(5000); //handle racing condition. TODO: better than this
         }
     }
+    else {
+        while (1) {
+            http_fd = accept(sock.fd, (struct sockaddr*)sock.handle, &sock.len);
+            if (http_fd> 0) {
+                args.is_ssl = 0;
+                args.client_fd = http_fd;
+                pthread_create(&pthread, NULL, conn_handler, (void*)&args); //create a thread for each new connection
+            }
+            usleep(5000);
+        }
+    }
+
     printf("Server stopped.\n");
     
+    //shutdown_SSL();
     return 0;
 }
 
@@ -66,13 +121,16 @@ int main()
 //handle an incoming connection
 //return nothing
 //*fd is pointer the file descriptor of client socket
-//TODO: date, content-length, POST
-void *conn_handler(void *fd)
+//TODO: date
+//HTTP handler is fine now, but HTTPS starts taking up fd, probably not cleaned up properly
+void *conn_handler(void *vargs)
 {
-    int client_fd = *(int*)fd;
+    client_info *args = (client_info*) vargs;
+    int client_fd = args->client_fd;
+    int is_ssl = args->is_ssl;
     int n = 0;
     int bytes_read = 0;
-    char buf[4096] = "";
+    char buf[4096*2] = "";
     char local_uri[2048] = "";
     char mime_type[128] = "";
     char header[1024] = "";
@@ -80,7 +138,31 @@ void *conn_handler(void *fd)
     long sz;
     char *request = NULL;
     char *_new_request;
+    SSL *conn_SSL = NULL;
     //printf("Connection established, fd: %d\n", client_fd);
+
+    /*Initialize SSL connection*/
+    if (is_ssl) {
+        fcntl(client_fd, F_SETFL, O_NONBLOCK);
+        conn_SSL = SSL_new(CTX);
+        if (!conn_SSL) {
+            fprintf(stderr, "Error creating SSL.\n");
+            return NULL;
+        }
+        SSL_set_fd(conn_SSL, client_fd);
+        SSL_set_accept_state(conn_SSL);
+        int err = 2;
+        int counter = 10;
+        while (err == 2 && counter > 0) {
+            err = SSL_get_error(conn_SSL, SSL_accept(conn_SSL));
+            usleep(10000);
+            --counter;
+        }
+        if (err) {
+            printf("Error accepting SSL handshake err:%d\n", err);
+            goto cleanup;
+        }
+    }
 
     //PROCESS HTTP REQUEST FROM CLIENT
     /*read data via TCP stream
@@ -88,10 +170,14 @@ void *conn_handler(void *fd)
      *if buf[sizeof(buf)] != 0, there's still more data*/
     request = malloc(1); //request points to new data, must be freed during cleanup
     do {
-        n = read_data(client_fd, buf, sizeof(buf));
-        if (n == -1) {
-            goto cleanup;
+        if (is_ssl) {
+            n = read_data_ssl(conn_SSL, buf, sizeof(buf));
         }
+        else {
+            n = read_data(client_fd, buf, sizeof(buf));
+        }
+        if (n < 0) goto cleanup;
+
         bytes_read += n;
         _new_request = (char*)realloc(request, bytes_read);
         if (_new_request == NULL) goto cleanup; //out of memory
@@ -100,7 +186,6 @@ void *conn_handler(void *fd)
     } while (buf[sizeof(buf)] != 0 && bytes_read < MAX_REQUEST_LEN); //stop if request is larger than 20MB or reached NULL
 
     struct http_request req = process_request(request); //process returned data
-
 
     //SERVE CLIENT REQUEST
     //PROCESS URI (decode url, check privileges or if file exists)
@@ -112,18 +197,19 @@ void *conn_handler(void *fd)
     strncat(local_uri, decoded_uri, sizeof(decoded_uri) - sizeof(SITEPATH)); //local_uri: local path of requested resource
 
     if (!is_valid_method(req.method)) {
-        send_error(client_fd, 400); //then send 400 to client
+        http_send_error(client_fd, 400, conn_SSL); //then send 400 to client
         goto cleanup;
     }
 
     if (file_exists(local_uri) < 0) { //if local resource doesn't exist
-        send_error(client_fd, 404); //then send 404 to client
+        http_send_error(client_fd, 404, conn_SSL); //then send 404 to client
         goto cleanup;
     }
     if (file_readable(local_uri) < 0) { //local resource isn't read-accessible
-        send_error(client_fd, 403);  //then send 403 to client
+        http_send_error(client_fd, 403, conn_SSL);  //then send 403 to client
         goto cleanup;
     }
+
 
     //TODO: cookie, gzip content, handle other methods like PUT, HEAD, DELETE..
     get_mime_type(mime_type, req.URI);
@@ -140,7 +226,7 @@ void *conn_handler(void *fd)
         int ret_code;
         char *data = (char*)system_output(args, &sz, &ret_code, 100000);
         if (ret_code < 0) { //if there's error in backend script, send err500 and skip sending returned data
-            send_error(client_fd, 500);
+            http_send_error(client_fd, 500, conn_SSL);
             goto cleanup_data;
         }
 
@@ -159,8 +245,15 @@ void *conn_handler(void *fd)
         }
         if (doc) {
             //begin sending data via TCP
-            send_data(client_fd, header, strlen(header)); //send header
-            send_data(client_fd, doc, sz - (doc - data)); //send document
+            if (is_ssl) {
+                send_data_ssl(conn_SSL, header, strlen(header)); //send header
+                send_data_ssl(conn_SSL, doc, sz - (doc - data)); //send document
+            }
+            else {
+                send_data(client_fd, header, strlen(header)); //send header
+                send_data(client_fd, doc, sz - (doc - data)); //send document
+            }
+            
         }
         cleanup_data:
         free(data);
@@ -176,16 +269,22 @@ void *conn_handler(void *fd)
         strcat(header, content_len);
 
         strcat(header, "\r\n\r\n"); //mandatory blank line separating header
-        send_data(client_fd, header, strlen(header)); //send header
-        serve_static_content(client_fd, local_uri, sz);
+        if (is_ssl) {
+            send_data_ssl(conn_SSL, header, strlen(header));
+        }
+        else {
+            send_data(client_fd, header, strlen(header)); //send header
+        }
+        serve_static_content(client_fd, local_uri, sz, conn_SSL);
     }
     else { //error reading requested data or system can't interpret requested script
-        send_error(client_fd, 500);
+        http_send_error(client_fd, 500, conn_SSL);
     }
 
     cleanup:
     //shutdown connection and free resources
     free(request);
+    if (is_ssl) disconnect_SSL(conn_SSL);
     sock_cleanup(client_fd);
     return NULL;
 }
@@ -243,7 +342,7 @@ int generate_header(char *header, char *body, char *mime_type, char *content_len
 }
 
 
-//return 0 if request method is not valid
+//return 0 if request method is not valid (any request that doesn't belong the methods set)
 int is_valid_method(char *method)
 {
     char *methods[] = {"GET", "POST", "HEAD", "PUT", "DELETE", "PATCH", "CONNECT", "OPTIONS"};
@@ -256,7 +355,7 @@ int is_valid_method(char *method)
 
 
 //read local_uri and write to client socket pointed to by client_fd
-void serve_static_content(int client_fd, char *local_uri, long content_len)
+void serve_static_content(int client_fd, char *local_uri, long content_len, SSL *conn_SSL)
 {
     int bytes_read = 0;
     char response[4096];
@@ -267,7 +366,12 @@ void serve_static_content(int client_fd, char *local_uri, long content_len)
     while (bytes_written < content_len) {
         memset(response, 0, sizeof(response));
         bytes_read = read(content_fd, response, sizeof(response)); //content body
-        bytes_written += send_data(client_fd, response, bytes_read);
+        if (conn_SSL) {
+            bytes_written += send_data_ssl(conn_SSL, response, bytes_read);
+        }
+        else {
+            bytes_written += send_data(client_fd, response, bytes_read);
+        }
         if (bytes_written < 0) break; //error occurred, close fd and clean up;
     }
 
@@ -275,7 +379,7 @@ void serve_static_content(int client_fd, char *local_uri, long content_len)
 }
 
 
-void send_error(int client_fd, int errcode)
+void http_send_error(int client_fd, int errcode, SSL *conn_SSL)
 {
     char err404[] = "HTTP/1.1 404 NOT FOUND\nContent-Type: text/html; charset=UTF-8\r\n\r\n404\nResource not found on server.\n";
     char err403[] = "HTTP/1.1 403 FORBIDDEN\nContent-Type: text/html; charset=UTF-8\r\n\r\n403\nNot enough privilege to access resource.\n";
@@ -283,14 +387,21 @@ void send_error(int client_fd, int errcode)
     char err500[] = "HTTP/1.1 500 INTERNAL SERVER ERROR\nContent-Type: text/html; charset=UTF-8\r\n\r\n500\nInternal Error.\n";
 
     switch (errcode) {
+        case 500:
+            if (conn_SSL) send_data_ssl(conn_SSL, err500, sizeof(err500));
+            else send_data(client_fd, err500, sizeof(err500));
+            break;      
         case 404:
-            send_data(client_fd, err404, sizeof(err404));
+            if (conn_SSL) send_data_ssl(conn_SSL, err404, sizeof(err404));
+            else send_data(client_fd, err404, sizeof(err404));
             break;
         case 403:
-            send_data(client_fd, err403, sizeof(err403));
+            if (conn_SSL) send_data_ssl(conn_SSL, err403, sizeof(err403));
+            else send_data(client_fd, err403, sizeof(err403));
             break;
         case 400:
-            send_data(client_fd, err400, sizeof(err400));
+            if (conn_SSL) send_data_ssl(conn_SSL, err400, sizeof(err400));
+            else send_data(client_fd, err400, sizeof(err400));
             break;       
     }
 }
@@ -299,6 +410,9 @@ void send_error(int client_fd, int errcode)
 /*load global configs
  *SITEPATH: physical path of website on disk
  *PORT: port to listen on (default 80)
+ *HOME: default homepage
+ *SSL_CERT_FILE_PEM: path of PEM file used for SSL that contains public key
+ *SSL_KEY_FILE_PEM: path of PEM file used for SSL that contains private key
  */
 int load_global_config()
 {
@@ -334,6 +448,27 @@ int load_global_config()
         memcpy(HOMEPAGE, s, lnbreak - s);
     }
     
+    //SSL stuff
+    s = strstr(buf, "SSL_CERT_FILE_PEM="); //public key file path
+    if (s == NULL) {
+        CERT_PUB_KEY_FILE[0] = 0;
+    }
+    else {
+        lnbreak = strstr(s, "\n");
+        s += 18; // len of "SSL_CERT_FILE_PEM="
+        memcpy(CERT_PUB_KEY_FILE, s, lnbreak - s);
+    }
+
+    s = strstr(buf, "SSL_KEY_FILE_PEM="); //private key file path
+    if (s == NULL) {
+        CERT_PRIV_KEY_FILE[0] = 0;
+    }
+    else {
+        lnbreak = strstr(s, "\n");
+        s += 17; // len of "SSL_CERT_FILE_PEM="
+        memcpy(CERT_PRIV_KEY_FILE, s, lnbreak - s);
+    }
+
     //other configs below
 
     return 0;

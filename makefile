@@ -1,7 +1,7 @@
-all: http_server.o serversocket.o http-request.o fileops.o http-mimes.o
-	gcc http_server.o serversocket.o http-request.o fileops.o http-mimes.o -lpthread -o start-server
+all: http_server.o serversocket.o http-request.o fileops.o http-mimes.o http-ssl.o
+	gcc http_server.o serversocket.o http-request.o fileops.o http-mimes.o http-ssl.o -lpthread -lssl -lcrypto -o start-server
 
-http_server.o: http_server.c serversocket.o http-request.o fileops.o http-mimes.o casing.h strinsert.h sysout.h
+http_server.o: http_server.c serversocket.o http-request.o fileops.o http-mimes.o http-ssl.o casing.h strinsert.h sysout.h
 	gcc -c http_server.c -o http_server.o
 
 serversocket.o: serversocket.c serversocket.h
@@ -16,5 +16,8 @@ fileops.o: fileops.c fileops.h
 http-mimes.o: http-mimes.c http-mimes.h
 	gcc -c http-mimes.c
 
+http-ssl.o: http-ssl.c http-ssl.h
+	gcc -c http-ssl.c
+
 clean:
-	rm serversocket.o http-request.o fileops.o http-mimes.o http_server.o
+	rm serversocket.o http-request.o fileops.o http-mimes.o http-ssl.o http_server.o
