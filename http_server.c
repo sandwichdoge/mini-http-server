@@ -12,7 +12,7 @@
 #include "http-ssl.h"
 #include "sysout.h"
 #include "casing.h" //uppercase() and lowercase()
-#include "strinsert.h" //strinsert()
+#include "str-utils.h" //strinsert()
 
 #define MAX_REQUEST_LEN 20*1000*1024
 
@@ -63,7 +63,6 @@ int main()
     client_info args;
 
     pthread_t pthread;
-
     switch (config_errno) {
         case -1:
             printf("Fatal error in http.conf: No PATH parameter specified.\n");
@@ -79,6 +78,7 @@ int main()
         printf("Error creating CTX.\n");
     }
     SSL_CTX_set_options(CTX, SSL_OP_SINGLE_DH_USE);
+    //SSL_CTX_set_session_cache_mode(CTX, SSL_SESS_CACHE_SERVER); CACHE_SERVER is default setting, no need to set again
 
     SSL_CTX_use_certificate_file(CTX, CERT_PUB_KEY_FILE , SSL_FILETYPE_PEM);
     SSL_CTX_use_PrivateKey_file(CTX, CERT_PRIV_KEY_FILE, SSL_FILETYPE_PEM);
@@ -139,7 +139,7 @@ void *conn_handler(void *vargs)
     char *request = NULL;
     char *_new_request;
     SSL *conn_SSL = NULL;
-    //printf("Connection established, fd: %d\n", client_fd);
+    //printf("Connection established, fd: %d\n", client_fd); fflush(stdout);
 
     /*Initialize SSL connection*/
     if (is_ssl) {
@@ -152,20 +152,20 @@ void *conn_handler(void *vargs)
         SSL_set_fd(conn_SSL, client_fd);
         SSL_set_accept_state(conn_SSL);
         int err = 2;
-        int counter = 10;
-        while (err == 2 && counter > 0) {
-            err = SSL_get_error(conn_SSL, SSL_accept(conn_SSL));
-            usleep(10000);
+        int counter = 100; //TLS timeout counter - 10s
+        while (err == 2 && counter > 0) { //err=2 means handshake with client is still in process
+            err = SSL_get_error(conn_SSL, SSL_accept(conn_SSL)); //check state of handshake
+            usleep(100000); //every 0.1s
             --counter;
         }
         if (err) {
-            printf("Error accepting SSL handshake err:%d\n", err);
+            printf("Error accepting SSL handshake err:%d, fd:%d\n", err, client_fd);
             goto cleanup;
         }
     }
 
     //PROCESS HTTP REQUEST FROM CLIENT
-    /*read data via TCP stream
+    /*read data via TCP stream, append new data to heap
      *keep reading and allocating memory for new data until NULL or 20MB max reached
      *if buf[sizeof(buf)] != 0, there's still more data*/
     request = malloc(1); //request points to new data, must be freed during cleanup
@@ -312,7 +312,7 @@ int generate_header(char *header, char *body, char *mime_type, char *content_len
     char *cont_type = strstr(user_defined_header, "content-type: ");
     if (!cont_type) {
         str_insert(header, 0, "content-type: ");
-        str_insert(header, 14,mime_type); //based on known MIME types
+        str_insert(header, 14, mime_type); //based on known MIME types
         str_insert(header, strlen("content-type: ") + strlen(mime_type) ," ;charset=utf-8\n");
     }
 
