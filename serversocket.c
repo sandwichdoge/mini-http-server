@@ -19,7 +19,7 @@ struct server_socket create_server_socket(int port)
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)); //optional, prevents address already in use error
     err = bind(fd, (struct sockaddr*)&server, sizeof(server));
     if (err < 0) printf("error binding\n");
-    err = listen(fd, 128); //max connections
+    err = listen(fd, MAX_CONNECTIONS); //max connections
     if (err < 0) printf("error listening\n");
 
     ret.fd = fd;
@@ -42,7 +42,7 @@ int read_data(int client_fd, char *buf, size_t bufsize)
 int send_data(int client_fd, char *data, size_t len)
 {
     int bytes_written = 0;
-    while (bytes_written < len) { //in case of traffic congestion
+    while (bytes_written < len) { //handle partial write in case of traffic congestion
         bytes_written += write(client_fd, data, len - bytes_written); //send tcp response
         if (bytes_written < 0) break; //error sending data to client
     }
@@ -60,12 +60,8 @@ int read_data_ssl(SSL *SSL_conn, char *buf, size_t bufsize)
 
 int send_data_ssl(SSL *SSL_conn, char *data, size_t len)
 {
-    int bytes_written = 0;
-    while (bytes_written < len) { //in case of traffic congestion
-        bytes_written += SSL_write(SSL_conn, data, len);
-        if (bytes_written < 0) break; //error sending data to client
-    }
-
+    int bytes_written = SSL_write(SSL_conn, data, len); //all or nothing, no partial write in SSL
+    //SSL_MODE_ENABLE_PARTIAL_WRITE for partial write
     return bytes_written;
 }
 

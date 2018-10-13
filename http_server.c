@@ -63,7 +63,6 @@ int main()
     client_info args;
 
     pthread_t pthread;
-
     switch (config_errno) {
         case -1:
             printf("Fatal error in http.conf: No PATH parameter specified.\n");
@@ -79,6 +78,7 @@ int main()
         printf("Error creating CTX.\n");
     }
     SSL_CTX_set_options(CTX, SSL_OP_SINGLE_DH_USE);
+    //SSL_CTX_set_session_cache_mode(CTX, SSL_SESS_CACHE_SERVER); CACHE_SERVER is default setting, no need to set again
 
     SSL_CTX_use_certificate_file(CTX, CERT_PUB_KEY_FILE , SSL_FILETYPE_PEM);
     SSL_CTX_use_PrivateKey_file(CTX, CERT_PRIV_KEY_FILE, SSL_FILETYPE_PEM);
@@ -139,7 +139,7 @@ void *conn_handler(void *vargs)
     char *request = NULL;
     char *_new_request;
     SSL *conn_SSL = NULL;
-    //printf("Connection established, fd: %d\n", client_fd);
+    //printf("Connection established, fd: %d\n", client_fd); fflush(stdout);
 
     /*Initialize SSL connection*/
     if (is_ssl) {
@@ -152,20 +152,20 @@ void *conn_handler(void *vargs)
         SSL_set_fd(conn_SSL, client_fd);
         SSL_set_accept_state(conn_SSL);
         int err = 2;
-        int counter = 10;
+        int counter = 100; //timeout counter: 10s
         while (err == 2 && counter > 0) {
             err = SSL_get_error(conn_SSL, SSL_accept(conn_SSL));
-            usleep(10000);
+            usleep(100000); //check state every 0.1s
             --counter;
         }
         if (err) {
-            printf("Error accepting SSL handshake err:%d\n", err);
+            printf("Error accepting SSL handshake err:%d, fd:%d\n", err, client_fd);
             goto cleanup;
         }
     }
 
     //PROCESS HTTP REQUEST FROM CLIENT
-    /*read data via TCP stream
+    /*read data via TCP stream, append new data to heap
      *keep reading and allocating memory for new data until NULL or 20MB max reached
      *if buf[sizeof(buf)] != 0, there's still more data*/
     request = malloc(1); //request points to new data, must be freed during cleanup
