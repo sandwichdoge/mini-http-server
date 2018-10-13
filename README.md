@@ -9,6 +9,10 @@ make
 make clean
 ```
 
+- Configure
+
+Edit 'http.conf' file.
+
 - Run
 ```
 sudo ./start-server
