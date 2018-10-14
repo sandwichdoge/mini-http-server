@@ -1,17 +1,16 @@
 # mini-http-server
-Primitive HTTP server in C.
+Minimal HTTP server in C with SSL support.
 
 TODO: handle date, log.
 
 - Compile
 ```
 make
+male ssl-ca
 make clean
 ```
 
-- Configure
-
-Edit 'http.conf' file.
+- Configure: Edit 'http.conf' file.
 
 - Run
 ```
