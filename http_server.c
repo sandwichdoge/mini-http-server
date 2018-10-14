@@ -57,14 +57,14 @@ SSL_CTX *CTX;
 
 int main()
 {
-    /*Block all SIGPIPE signals, caused by writing to connection that's already closed by client*/
+/*Block all SIGPIPE signals, caused by writing to connection that's already closed by client*/
     typedef unsigned long sigset_t;
     sigset_t set;
     sigemptyset(&set);
     sigaddset(&set, SIGPIPE);
     pthread_sigmask(SIG_BLOCK, &set, NULL);
     /**/
-
+  
     int config_errno = load_global_config();
     switch (config_errno) {
         case -1:
