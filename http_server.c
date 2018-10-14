@@ -4,6 +4,7 @@
 #include <pthread.h> //multi-connection
 #include <fcntl.h>  //to read html files
 #include <string.h>
+#include <signal.h>
 #include <sys/wait.h>
 #include "serversocket.h"
 #include "http-request.h"
@@ -12,7 +13,7 @@
 #include "http-ssl.h"
 #include "sysout.h"
 #include "casing.h" //uppercase() and lowercase()
-#include "strinsert.h" //strinsert()
+#include "str-utils.h" //strinsert()
 
 #define MAX_REQUEST_LEN 20*1000*1024
 
@@ -56,13 +57,15 @@ SSL_CTX *CTX;
 
 int main()
 {
-    int http_fd= 0, ssl_fd = 0; //session fd between client and server
+/*Block all SIGPIPE signals, caused by writing to connection that's already closed by client*/
+    typedef unsigned long sigset_t;
+    sigset_t set;
+    sigemptyset(&set);
+    sigaddset(&set, SIGPIPE);
+    pthread_sigmask(SIG_BLOCK, &set, NULL);
+    /**/
+  
     int config_errno = load_global_config();
-    struct server_socket sock = create_server_socket(PORT);
-    struct server_socket sock_ssl = create_server_socket(PORT_SSL);
-    client_info args;
-
-    pthread_t pthread;
     switch (config_errno) {
         case -1:
             printf("Fatal error in http.conf: No PATH parameter specified.\n");
@@ -71,7 +74,14 @@ int main()
             printf("Fatal error in http.conf: Invalid SITEPATH parameter.\n");
             return -1;
     }
-    
+
+    struct server_socket sock = create_server_socket(PORT);
+    struct server_socket sock_ssl = create_server_socket(PORT_SSL);
+    int http_fd= 0, ssl_fd = 0; //session fd between client and server
+    client_info args;
+    pthread_t pthread;
+
+
     initialize_SSL();
     CTX = SSL_CTX_new(TLS_server_method());
     if (!CTX) {

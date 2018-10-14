@@ -21,7 +21,7 @@ struct server_socket create_server_socket(int port)
     if (err < 0) printf("error binding\n");
     err = listen(fd, MAX_CONNECTIONS); //max connections
     if (err < 0) printf("error listening\n");
-
+    
     ret.fd = fd;
     ret.len = len;
     ret.handle = &server;
@@ -60,7 +60,9 @@ int read_data_ssl(SSL *SSL_conn, char *buf, size_t bufsize)
 
 int send_data_ssl(SSL *SSL_conn, char *data, size_t len)
 {
-    int bytes_written = SSL_write(SSL_conn, data, len); //all or nothing, no partial write in SSL
+    int bytes_written;
+    if (SSL_get_shutdown(SSL_conn) > 0) bytes_written = -1;
+    else bytes_written = SSL_write(SSL_conn, data, len); //all or nothing, no partial write in SSL
     //SSL_MODE_ENABLE_PARTIAL_WRITE for partial write
     return bytes_written;
 }
