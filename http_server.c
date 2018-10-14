@@ -4,6 +4,7 @@
 #include <pthread.h> //multi-connection
 #include <fcntl.h>  //to read html files
 #include <string.h>
+#include <signal.h>
 #include <sys/wait.h>
 #include "serversocket.h"
 #include "http-request.h"
@@ -56,13 +57,15 @@ SSL_CTX *CTX;
 
 int main()
 {
-    int http_fd= 0, ssl_fd = 0; //session fd between client and server
-    int config_errno = load_global_config();
-    struct server_socket sock = create_server_socket(PORT);
-    struct server_socket sock_ssl = create_server_socket(PORT_SSL);
-    client_info args;
+    /*Block all SIGPIPE signals, caused by writing to connection that's already closed by client*/
+    typedef unsigned long sigset_t;
+    sigset_t set;
+    sigemptyset(&set);
+    sigaddset(&set, SIGPIPE);
+    pthread_sigmask(SIG_BLOCK, &set, NULL);
+    /**/
 
-    pthread_t pthread;
+    int config_errno = load_global_config();
     switch (config_errno) {
         case -1:
             printf("Fatal error in http.conf: No PATH parameter specified.\n");
@@ -71,7 +74,14 @@ int main()
             printf("Fatal error in http.conf: Invalid SITEPATH parameter.\n");
             return -1;
     }
-    
+
+    struct server_socket sock = create_server_socket(PORT);
+    struct server_socket sock_ssl = create_server_socket(PORT_SSL);
+    int http_fd= 0, ssl_fd = 0; //session fd between client and server
+    client_info args;
+    pthread_t pthread;
+
+
     initialize_SSL();
     CTX = SSL_CTX_new(TLS_server_method());
     if (!CTX) {
@@ -152,10 +162,10 @@ void *conn_handler(void *vargs)
         SSL_set_fd(conn_SSL, client_fd);
         SSL_set_accept_state(conn_SSL);
         int err = 2;
-        int counter = 100; //TLS timeout counter - 10s
-        while (err == 2 && counter > 0) { //err=2 means handshake with client is still in process
-            err = SSL_get_error(conn_SSL, SSL_accept(conn_SSL)); //check state of handshake
-            usleep(100000); //every 0.1s
+        int counter = 100; //timeout counter: 10s
+        while (err == 2 && counter > 0) {
+            err = SSL_get_error(conn_SSL, SSL_accept(conn_SSL));
+            usleep(100000); //check state every 0.1s
             --counter;
         }
         if (err) {
@@ -312,7 +322,7 @@ int generate_header(char *header, char *body, char *mime_type, char *content_len
     char *cont_type = strstr(user_defined_header, "content-type: ");
     if (!cont_type) {
         str_insert(header, 0, "content-type: ");
-        str_insert(header, 14, mime_type); //based on known MIME types
+        str_insert(header, 14,mime_type); //based on known MIME types
         str_insert(header, strlen("content-type: ") + strlen(mime_type) ," ;charset=utf-8\n");
     }
 
