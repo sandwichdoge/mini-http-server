@@ -57,14 +57,6 @@ SSL_CTX *CTX;
 
 int main()
 {
-/*Block all SIGPIPE signals, caused by writing to connection that's already closed by client*/
-    typedef unsigned long sigset_t;
-    sigset_t set;
-    sigemptyset(&set);
-    sigaddset(&set, SIGPIPE);
-    pthread_sigmask(SIG_BLOCK, &set, NULL);
-    /**/
-  
     int config_errno = load_global_config();
     switch (config_errno) {
         case -1:
@@ -104,6 +96,8 @@ int main()
             if (ssl_fd> 0) {
                 args.is_ssl = 1;
                 args.client_fd = ssl_fd;
+                /*Handle SIGPIPE signals, caused by writing to connection that's already closed by client*/
+                signal(SIGPIPE, SIG_IGN);
                 pthread_create(&pthread, NULL, conn_handler, (void*)&args); //create a thread for each new connection
             }
             usleep(5000); //handle racing condition. TODO: better than this
@@ -115,6 +109,8 @@ int main()
             if (http_fd> 0) {
                 args.is_ssl = 0;
                 args.client_fd = http_fd;
+                /*Handle SIGPIPE signals, caused by writing to connection that's already closed by client*/
+                signal(SIGPIPE, SIG_IGN);
                 pthread_create(&pthread, NULL, conn_handler, (void*)&args); //create a thread for each new connection
             }
             usleep(5000);
