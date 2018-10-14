@@ -216,7 +216,7 @@ void *conn_handler(void *vargs)
         goto cleanup;
     }
 
-
+    //printf("res:%s\n", local_uri); fflush(stdout);
     //TODO: cookie, gzip content, handle other methods like PUT, HEAD, DELETE..
     get_mime_type(mime_type, req.URI);
     
