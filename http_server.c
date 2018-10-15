@@ -40,6 +40,7 @@ int is_valid_method(char *method);
 int load_global_config();
 int generate_header(char *header, char *body, char *mime_type, char *content_len);
 
+
 typedef struct client_info {
     int is_ssl;
     int client_fd;
@@ -54,6 +55,10 @@ int PORT_SSL = 443; //default port for SSL is 443
 SSL *conn_SSL;
 SSL_CTX *CTX;
 
+void handle_SIGSEGV()
+{
+    fprintf(stderr, "SEGFAULT received from connection\n"); fflush(stderr);
+}
 
 int main()
 {
@@ -82,6 +87,7 @@ int main()
     SSL_CTX_set_options(CTX, SSL_OP_SINGLE_DH_USE);
     //SSL_CTX_set_session_cache_mode(CTX, SSL_SESS_CACHE_SERVER); CACHE_SERVER is default setting, no need to set again
 
+
     SSL_CTX_use_certificate_file(CTX, CERT_PUB_KEY_FILE , SSL_FILETYPE_PEM);
     SSL_CTX_use_PrivateKey_file(CTX, CERT_PRIV_KEY_FILE, SSL_FILETYPE_PEM);
     if (!SSL_CTX_check_private_key(CTX)) {
@@ -98,6 +104,7 @@ int main()
                 args.client_fd = ssl_fd;
                 /*Handle SIGPIPE signals, caused by writing to connection that's already closed by client*/
                 signal(SIGPIPE, SIG_IGN);
+                signal(SIGSEGV, handle_SIGSEGV);
                 pthread_create(&pthread, NULL, conn_handler, (void*)&args); //create a thread for each new connection
             }
             usleep(5000); //handle racing condition. TODO: better than this
@@ -118,8 +125,7 @@ int main()
     }
 
     printf("Server stopped.\n");
-    
-    //shutdown_SSL();
+    shutdown_SSL();
     return 0;
 }
 
@@ -127,8 +133,7 @@ int main()
 //handle an incoming connection
 //return nothing
 //*fd is pointer the file descriptor of client socket
-//TODO: date
-//HTTP handler is fine now, but HTTPS starts taking up fd, probably not cleaned up properly
+//TODO: date, proper log
 void *conn_handler(void *vargs)
 {
     client_info *args = (client_info*) vargs;
@@ -136,6 +141,7 @@ void *conn_handler(void *vargs)
     int is_ssl = args->is_ssl;
     int n = 0;
     int bytes_read = 0;
+    int ssl_err;
     char buf[4096*2] = "";
     char local_uri[2048] = "";
     char mime_type[128] = "";
@@ -149,7 +155,7 @@ void *conn_handler(void *vargs)
 
     /*Initialize SSL connection*/
     if (is_ssl) {
-        fcntl(client_fd, F_SETFL, O_NONBLOCK);
+        fcntl(client_fd, F_SETFL, O_NONBLOCK); //non-blocking IO for timeout measure
         conn_SSL = SSL_new(CTX);
         if (!conn_SSL) {
             fprintf(stderr, "Error creating SSL.\n");
@@ -157,15 +163,15 @@ void *conn_handler(void *vargs)
         }
         SSL_set_fd(conn_SSL, client_fd);
         SSL_set_accept_state(conn_SSL);
-        int err = 2;
-        int counter = 100; //timeout counter: 10s
-        while (err == 2 && counter > 0) {
-            err = SSL_get_error(conn_SSL, SSL_accept(conn_SSL));
-            usleep(100000); //check state every 0.1s
+        ssl_err = 2;
+        int counter = 200; //timeout counter: 10s
+        while (ssl_err == 2 && counter > 0) { //ssl_err == 2 means handshake is still in process
+            ssl_err = SSL_get_error(conn_SSL, SSL_accept(conn_SSL));
+            usleep(50000); //check state every 0.05s
             --counter;
         }
-        if (err) {
-            printf("Error accepting SSL handshake err:%d, fd:%d\n", err, client_fd);
+        if (ssl_err) {
+            printf("Error accepting SSL handshake err:%d, fd:%d\n", ssl_err, client_fd);
             goto cleanup;
         }
     }
@@ -289,8 +295,8 @@ void *conn_handler(void *vargs)
 
     cleanup:
     //shutdown connection and free resources
-    free(request);
-    if (is_ssl) disconnect_SSL(conn_SSL);
+    if (!ssl_err) free(request);
+    if (is_ssl) disconnect_SSL(conn_SSL, ssl_err);
     sock_cleanup(client_fd);
     return NULL;
 }
@@ -442,6 +448,12 @@ int load_global_config()
     if (s == NULL) PORT = 80; //no PORT config, use default 80
     s += 5; //len of "PORT="
     PORT = atoi(s);
+
+    //PORT for SSL (default 443)
+    s = strstr(buf, "PORT_SSL=");
+    if (s == NULL) PORT_SSL = 443; //no PORT config, use default 80
+    s += 9; //len of "PORT_SSL="
+    PORT_SSL = atoi(s);
 
     //HOMEPAGE: default index page
     s = strstr(buf, "HOME=");

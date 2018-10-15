@@ -10,6 +10,6 @@
 
 void initialize_SSL();
 void shutdown_SSL();
-void disconnect_SSL(SSL *conn_SSL);
+void disconnect_SSL(SSL *conn_SSL, int err);
 
 #endif
