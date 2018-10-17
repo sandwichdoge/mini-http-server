@@ -1,3 +1,6 @@
+CC = gcc
+CFLAGS = -lpthread -lssl -lcrypto
+
 current_dir = $(shell pwd)
 conf_demo_dir := PATH=$(current_dir)
 conf_demo_dir := $(conf_demo_dir)/demo-site-1
@@ -8,8 +11,8 @@ conf_ssl_cert_file_pem := SSL_CERT_FILE_PEM=$(current_dir)/certificate.pem
 conf_ssl_key_file_pem := SSL_KEY_FILE_PEM=$(current_dir)/key.pem
 
 
-all: http_server.o serversocket.o http-request.o fileops.o http-mimes.o http-ssl.o
-	gcc -g http_server.o serversocket.o http-request.o fileops.o http-mimes.o http-ssl.o -lpthread -lssl -lcrypto -o start-server
+all: http_server.o socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o
+	$(CC) -g http_server.o socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o $(CFLAGS) -o start-server
 	@echo GENERATING CONFIGS..
 	@echo DO NOT COMMENT ON THE SAME LINE AS PARAMETERS > http.conf
 	@echo $(conf_demo_dir) >> http.conf
@@ -20,23 +23,23 @@ all: http_server.o serversocket.o http-request.o fileops.o http-mimes.o http-ssl
 	@echo $(conf_ssl_key_file_pem) >> http.conf
 
 
-http_server.o: http_server.c serversocket.o http-request.o fileops.o http-mimes.o http-ssl.o casing.h str-utils.h sysout.h
-	gcc -c -g http_server.c -o http_server.o
-
-serversocket.o: serversocket.c serversocket.h
-	gcc -c serversocket.c
+http_server.o: http_server.c socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o casing.h str-utils.h sysout.h
+	$(CC) -c -g http_server.c -o http_server.o
 
 http-request.o: http-request.c http-request.h
-	gcc -c http-request.c
+	$(CC) -c http-request.c
 
 fileops.o: fileops.c fileops.h
-	gcc -c fileops.c
+	$(CC) -c fileops.c
 
-http-mimes.o: http-mimes.c http-mimes.h
-	gcc -c http-mimes.c
+mime/http-mimes.o: mime/http-mimes.c mime/http-mimes.h
+	$(CC) -c mime/http-mimes.c -o mime/http-mimes.o
 
-http-ssl.o: http-ssl.c http-ssl.h
-	gcc -c http-ssl.c
+serversocket.o: socket/serversocket.c socket/serversocket.h
+	$(CC) -c socket/serversocket.c
+
+http-ssl.o: socket/http-ssl.c socket/http-ssl.h
+	$(CC) -c socket/http-ssl.c
 
 
 ssl-ca:
@@ -45,4 +48,4 @@ ssl-ca:
 
 
 clean:
-	rm serversocket.o http-request.o fileops.o http-mimes.o http-ssl.o http_server.o
+	rm socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o http_server.o

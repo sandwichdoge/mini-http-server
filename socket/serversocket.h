@@ -8,7 +8,7 @@
 #include <netinet/in.h> //INADDR_ANY
 #include "http-ssl.h"
 
-#define MAX_CONNECTIONS 4096 //max number of connections
+#define MAX_CONNECTIONS 65536 //max number of connections
 
 struct server_socket {
     int fd;

@@ -17,7 +17,6 @@ void shutdown_SSL()
 
 void disconnect_SSL(SSL *conn_SSL, int err)
 {
-
     SSL_shutdown(conn_SSL);
     if (err) SSL_free(conn_SSL);
 }
