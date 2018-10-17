@@ -6,11 +6,11 @@
 #include <string.h>
 #include <signal.h>
 #include <sys/wait.h>
-#include "serversocket.h"
+#include "socket/serversocket.h"
+#include "socket/http-ssl.h"
 #include "http-request.h"
 #include "fileops.h"
-#include "http-mimes.h"
-#include "http-ssl.h"
+#include "mime/http-mimes.h"
 #include "sysout.h"
 #include "casing.h" //uppercase() and lowercase()
 #include "str-utils.h" //strinsert()
@@ -52,7 +52,6 @@ char CERT_PUB_KEY_FILE[512];
 char CERT_PRIV_KEY_FILE[512];
 int PORT = 80; //default port 80
 int PORT_SSL = 443; //default port for SSL is 443
-SSL *conn_SSL;
 SSL_CTX *CTX;
 
 void handle_SIGSEGV()
@@ -70,6 +69,8 @@ int main()
         case -2:
             printf("Fatal error in http.conf: Invalid SITEPATH parameter.\n");
             return -1;
+        case -3:
+            printf("Fatal error: cannot open http.conf\n");
     }
 
     struct server_socket sock = create_server_socket(PORT);
@@ -434,6 +435,7 @@ int load_global_config()
     char *lnbreak;
 
     int fd = open("http.conf", O_RDONLY);
+    if (fd < 0) return -3; //could not open http.conf
     read(fd, buf, sizeof(buf)); //read http.conf file into buf
 
     //SITEPATH: physical path of website
