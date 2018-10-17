@@ -139,9 +139,8 @@ void *conn_handler(void *vargs)
     client_info *args = (client_info*) vargs;
     int client_fd = args->client_fd;
     int is_ssl = args->is_ssl;
-    int n = 0;
     int bytes_read = 0;
-    int ssl_err;
+    int ssl_err = 0;
     char buf[4096*2] = "";
     char local_uri[2048] = "";
     char mime_type[128] = "";
@@ -158,20 +157,21 @@ void *conn_handler(void *vargs)
         fcntl(client_fd, F_SETFL, O_NONBLOCK); //non-blocking IO for timeout measure
         conn_SSL = SSL_new(CTX);
         if (!conn_SSL) {
-            fprintf(stderr, "Error creating SSL.\n");
-            return NULL;
+            fprintf(stderr, "Error creating SSL.\n"); fflush(stderr);
+            goto cleanup;
         }
         SSL_set_fd(conn_SSL, client_fd);
         SSL_set_accept_state(conn_SSL);
-        ssl_err = 2;
+
         int counter = 200; //timeout counter: 10s
-        while (ssl_err == 2 && counter > 0) { //ssl_err == 2 means handshake is still in process
+        do {
             ssl_err = SSL_get_error(conn_SSL, SSL_accept(conn_SSL));
             usleep(50000); //check state every 0.05s
             --counter;
-        }
+        } while (ssl_err == 2 && counter > 0); //ssl_err == 2 means handshake is still in process
+
         if (ssl_err) {
-            printf("Error accepting SSL handshake err:%d, fd:%d\n", ssl_err, client_fd);
+            fprintf(stderr, "Error accepting SSL handshake err:%d, fd:%d\n", ssl_err, client_fd); fflush(stderr);
             goto cleanup;
         }
     }
@@ -180,6 +180,7 @@ void *conn_handler(void *vargs)
     /*read data via TCP stream, append new data to heap
      *keep reading and allocating memory for new data until NULL or 20MB max reached
      *if buf[sizeof(buf)] != 0, there's still more data*/
+    int n = 0;
     request = malloc(1); //request points to new data, must be freed during cleanup
     do {
         if (is_ssl) {
@@ -224,7 +225,6 @@ void *conn_handler(void *vargs)
 
     //printf("res:%s\n", local_uri); fflush(stdout);
     //TODO: cookie, gzip content, handle other methods like PUT, HEAD, DELETE..
-    get_mime_type(mime_type, req.URI);
     
     //PROCESS DATA
     //handle executable requests here
@@ -242,7 +242,8 @@ void *conn_handler(void *vargs)
             goto cleanup_data;
         }
 
-        sprintf(content_len, "%d\n", sz); //equivalent to itoa(content_len)
+        get_mime_type(mime_type, req.URI); //MIME type for response header
+        sprintf(content_len, "%d\n", sz); //content-length for response header - equivalent to itoa(content_len)
 
         //generate header based on data returned from interpreter program
         generate_header(header, data, mime_type, content_len);
@@ -295,8 +296,8 @@ void *conn_handler(void *vargs)
 
     cleanup:
     //shutdown connection and free resources
-    if (!ssl_err) free(request);
-    if (is_ssl) disconnect_SSL(conn_SSL, ssl_err);
+    if (!ssl_err) free(request); //free() shouldn't do anything if pointer is NULL, but in multithreading it's funky, so check jic
+    if (is_ssl && conn_SSL != NULL) disconnect_SSL(conn_SSL, ssl_err); //will call additional SSL_free() if there's error (ssl_err != 0)
     sock_cleanup(client_fd);
     return NULL;
 }
