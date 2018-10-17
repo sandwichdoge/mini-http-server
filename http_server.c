@@ -105,7 +105,7 @@ int main()
                 args.client_fd = ssl_fd;
                 /*Handle SIGPIPE signals, caused by writing to connection that's already closed by client*/
                 signal(SIGPIPE, SIG_IGN);
-                signal(SIGSEGV, handle_SIGSEGV);
+                signal(SIGABRT, handle_SIGSEGV);
                 pthread_create(&pthread, NULL, conn_handler, (void*)&args); //create a thread for each new connection
             }
             usleep(5000); //handle racing condition. TODO: better than this
@@ -159,6 +159,7 @@ void *conn_handler(void *vargs)
         conn_SSL = SSL_new(CTX);
         if (!conn_SSL) {
             fprintf(stderr, "Error creating SSL.\n"); fflush(stderr);
+            ssl_err = 2;
             goto cleanup;
         }
         SSL_set_fd(conn_SSL, client_fd);
@@ -193,10 +194,13 @@ void *conn_handler(void *vargs)
         if (n < 0) goto cleanup;
 
         bytes_read += n;
-        _new_request = (char*)realloc(request, bytes_read);
-        if (_new_request == NULL) goto cleanup; //out of memory
-        request = _new_request;
-        memcpy(request + bytes_read - n, buf, n); //append data from tcp stream to *request
+        if (n > 0) {
+            _new_request = (char*)realloc(request, bytes_read);
+            if (_new_request == NULL) goto cleanup; //out of memory
+            request = _new_request;
+            memcpy(request + bytes_read - n, buf, n); //append data from tcp stream to *request
+        }
+        
     } while (buf[sizeof(buf)] != 0 && bytes_read < MAX_REQUEST_LEN); //stop if request is larger than 20MB or reached NULL
 
     struct http_request req = process_request(request); //process returned data
