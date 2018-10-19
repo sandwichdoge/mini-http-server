@@ -344,7 +344,7 @@ int generate_header(char *header, char *body, char *mime_type, char *content_len
     
     //define HTTP version if back-end doesn't specify
     char *httpver = strstr(user_defined_header, "http/");
-    if (httpver) {
+    if (httpver && httpver - user_defined_header < 4) { //take into account unnecessary linefeeds from backend retards
         n = strstr(httpver, "\n");
         if (n) {
             uppercase(httpver_final, httpver, n - httpver + 1); //n-httpver: len of httpver line
@@ -362,7 +362,7 @@ int generate_header(char *header, char *body, char *mime_type, char *content_len
     }
     strcat(header, "Content-Length: ");
     strcat(header, content_len);
-    strcat(header, "server: mini-http-server\r\n\r\n");
+    strcat(header, "Server: mini-http-server\r\n\r\n");
 
     return 0;
 }
