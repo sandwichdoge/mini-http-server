@@ -54,9 +54,9 @@ int PORT = 80; //default port 80
 int PORT_SSL = 443; //default port for SSL is 443
 SSL_CTX *CTX;
 
-void handle_SIGSEGV()
+void handle_SIGABRT()
 {
-    fprintf(stderr, "SEGFAULT received from connection\n"); fflush(stderr);
+    fprintf(stderr, "SIGABRT received\n"); fflush(stderr);
 }
 
 int main()
@@ -105,7 +105,6 @@ int main()
                 args.client_fd = ssl_fd;
                 /*Handle SIGPIPE signals, caused by writing to connection that's already closed by client*/
                 signal(SIGPIPE, SIG_IGN);
-                signal(SIGABRT, handle_SIGSEGV);
                 pthread_create(&pthread, NULL, conn_handler, (void*)&args); //create a thread for each new connection
             }
             usleep(5000); //handle racing condition. TODO: better than this
@@ -151,7 +150,7 @@ void *conn_handler(void *vargs)
     char *request = NULL;
     char *_new_request;
     SSL *conn_SSL = NULL;
-    //printf("Connection established, fd: %d\n", client_fd); fflush(stdout);
+    printf("Connection established, fd: %d\n", client_fd); fflush(stdout);
 
     /*Initialize SSL connection*/
     if (is_ssl) {
@@ -177,26 +176,30 @@ void *conn_handler(void *vargs)
             goto cleanup;
         }
     }
-
+    
     //PROCESS HTTP REQUEST FROM CLIENT
     /*read data via TCP stream, append new data to heap
      *keep reading and allocating memory for new data until NULL or 20MB max reached
+     *finally pass it it down to process_request() to get info about it (uri, method, body data)
      *if buf[sizeof(buf)] != 0, there's still more data*/
     int n = 0;
     request = malloc(1); //request points to new data, must be freed during cleanup
     do {
-        if (is_ssl) {
+        if (is_ssl) { //https
             n = read_data_ssl(conn_SSL, buf, sizeof(buf));
         }
-        else {
+        else { //regular http without ssl
             n = read_data(client_fd, buf, sizeof(buf));
         }
         if (n < 0) goto cleanup;
-
-        bytes_read += n;
+        
         if (n > 0) {
-            _new_request = (char*)realloc(request, bytes_read);
-            if (_new_request == NULL) goto cleanup; //out of memory
+            bytes_read += n;
+            _new_request = (char*)realloc(request, bytes_read + 1);
+            if (_new_request == NULL) {
+                fprintf(stderr, "Out of memory.\n"); fflush(stderr);
+                goto cleanup; //out of memory
+            }
             request = _new_request;
             memcpy(request + bytes_read - n, buf, n); //append data from tcp stream to *request
         }
@@ -241,17 +244,18 @@ void *conn_handler(void *vargs)
         char *args[] = {interpreter, p, req.body, req.cookie, NULL};
         if (req.body_len) req.body[req.body_len] = 0; //NULL terminate upon GET with params, if it's POST, no body_len is returned
         int ret_code;
-        char *data = (char*)system_output(args, &sz, &ret_code, 100000);
+        char *data = system_output(args, &sz, &ret_code, 10000000);
         if (ret_code < 0) { //if there's error in backend script, send err500 and skip sending returned data
             http_send_error(client_fd, 500, conn_SSL);
             goto cleanup_data;
         }
-
+        //printf("%d %d\n", strlen(data), sz);
+        
         get_mime_type(mime_type, req.URI); //MIME type for response header
         sprintf(content_len, "%d\n", sz); //content-length for response header - equivalent to itoa(content_len)
 
         //generate header based on data returned from interpreter program
-        generate_header(header, data, mime_type, content_len);
+        generate_header(header, data, mime_type, content_len); //TODO: fix this
 
         //determine where the body is in returned data and send it to client
         char *doc;
@@ -298,18 +302,21 @@ void *conn_handler(void *vargs)
     else { //error reading requested data or system can't interpret requested script
         http_send_error(client_fd, 500, conn_SSL);
     }
-
+    
     cleanup:
     //shutdown connection and free resources
     if (!ssl_err) free(request); //free() shouldn't do anything if pointer is NULL, but in multithreading it's funky, so check jic
     if (is_ssl && conn_SSL != NULL) disconnect_SSL(conn_SSL, ssl_err); //will call additional SSL_free() if there's error (ssl_err != 0)
     sock_cleanup(client_fd);
+    //printf("Cleaned up.\n"); fflush(stdout);
+
     return NULL;
 }
 
 
 //body includes everything that backend script prints out, not just html content
 //*header is the processed output
+//*body is IMMUTABLE
 int generate_header(char *header, char *body, char *mime_type, char *content_len)
 {
     char buf[1024] = "";
@@ -317,15 +324,17 @@ int generate_header(char *header, char *body, char *mime_type, char *content_len
     char httpver_final[32];
     char *doc_begin;
     char *n; //this will store linebreak char
+
     doc_begin = strstr(body, "\n<html");
-    memcpy(buf, body, doc_begin - body);
+    if (doc_begin == NULL) return -1; //invalid html response, callee will throw 500
+    strncpy(buf, body, doc_begin - body);
     lowercase(user_defined_header, buf, doc_begin - body);
 
     //printf("%d %s\n--\n", doc_begin - body, user_defined_header);
     //fflush(stdout);
 
-    strcpy(header, user_defined_header);
-
+    strncpy(header, user_defined_header, sizeof(user_defined_header));
+    
     //define content-type if back-end does not
     char *cont_type = strstr(user_defined_header, "content-type: ");
     if (!cont_type) {
@@ -333,7 +342,7 @@ int generate_header(char *header, char *body, char *mime_type, char *content_len
         str_insert(header, 14,mime_type); //based on known MIME types
         str_insert(header, strlen("content-type: ") + strlen(mime_type) ," ;charset=utf-8\n");
     }
-
+    
     //define HTTP version if back-end doesn't specify
     char *httpver = strstr(user_defined_header, "http/");
     if (httpver) {

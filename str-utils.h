@@ -3,7 +3,7 @@
 
 void str_insert(char *str, int pos, char *substr)
 {
-    char *tail = malloc(strlen(str + pos));
+    char *tail = malloc(strlen(str + pos) + 1);
     strcpy(tail, str + pos);
     str[pos] = '\0';
     strcat(str, substr);

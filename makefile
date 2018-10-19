@@ -12,7 +12,9 @@ conf_ssl_key_file_pem := SSL_KEY_FILE_PEM=$(current_dir)/key.pem
 
 
 all: http_server.o socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o
-	$(CC) -g http_server.o socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o $(CFLAGS) -o start-server
+	$(CC) http_server.o socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o $(CFLAGS) -o start-server
+	
+config:
 	@echo GENERATING CONFIGS..
 	@echo DO NOT COMMENT ON THE SAME LINE AS PARAMETERS > http.conf
 	@echo $(conf_demo_dir) >> http.conf

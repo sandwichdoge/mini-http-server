@@ -6,7 +6,7 @@
  *time_out  : time out in miliseconds. 
  *CALLER IS RESPONSIBLE FOR FREEING RETURNED MEMORY AFTER USE
  */
-void* system_output(char **args, long *output_sz, int *retcode, int time_out_ms)
+char* system_output(char **args, long *output_sz, int *retcode, int time_out_ms)
 {
     int fds[2];
     int buf[4096];
@@ -19,7 +19,7 @@ void* system_output(char **args, long *output_sz, int *retcode, int time_out_ms)
                                     //written to file table entry pointed to by fd1-
                                     //stdout is alias of fd1
         dup2(fds[1], STDERR_FILENO);  //point stderr to fd1 as well
-        //close(fds[1]);  //pipe is now fd0<->stdout, we can now close fd1
+        close(fds[1]);  //pipe is now fd0<->stdout, we can now close fd1
         execvp(args[0], args);  //child process will now be cannibalized
     }
     else {  //is parent
@@ -28,7 +28,7 @@ void* system_output(char **args, long *output_sz, int *retcode, int time_out_ms)
         long bytes_read_last = 0;
         int brkflag = 0; //if flag is 1 when in loop, read buffer 1 last time then break
         pid_t pid_s;
-        void *output = malloc(1);
+        char *output = malloc(1);
         fcntl(fds[0], F_SETFL, O_NONBLOCK); /*non-blocking IO, https://stackoverflow.com/questions/8130922/processes-hang-on-read
                                                                 since read() will hang when reading from empty pipe if this option is not set*/
         while (time_out_ms) {  //soft, non-RT sleep
@@ -36,17 +36,21 @@ void* system_output(char **args, long *output_sz, int *retcode, int time_out_ms)
             if (pid_s > 0) brkflag = 1; //child exited, read from buf 1 last time then break
             bytes_read_last = read(fds[0], buf, sizeof(buf));
             if (bytes_read_last > 0) {
-                output = realloc(output, bytes_read_total + bytes_read_last);
+                output = realloc(output, bytes_read_total + bytes_read_last + 1);
                 if (output == NULL) break; //out of memory
                 memcpy(output + bytes_read_total, buf, bytes_read_last); //concatenate new data
                 bytes_read_total += bytes_read_last;
+                memset(buf, 0, sizeof(buf));
             }
-            if (brkflag) break;
-            time_out_ms -= 1;
-            usleep(1000);
+            if (brkflag) {
+                break;
+            }
+            //time_out_ms -= 1;
         }
         close(fds[0]);
         close(fds[1]);
+
+        *(output + bytes_read_total) = '\0';
         *retcode = ret_code;
         *output_sz = bytes_read_total;
         return output; //caller needs to free() this

@@ -46,7 +46,7 @@ struct http_request process_request(char *request)
     //Protocol/ HTTP version
     char *httpver;
     if (!URI) { //no uri or anything specified from client,
-        httpver = NULL; //shouldn't happen unless client sends niggerlicious requests like just 'GET' with no additional info
+        httpver = NULL; //shouldn't happen unless client sends niggerlicious requests like just 3 chars 'GET' with no additional info
     }
     else {
         httpver = strstr(URI + uri_len, "HTTP/");

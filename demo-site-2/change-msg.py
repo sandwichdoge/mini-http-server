@@ -12,7 +12,7 @@ def readMsgOfTheDay():
 
 content = readMsgOfTheDay()
 
-print "Content-Type: text/html;\n"
+print "Content-Type: text/html;\r\n"
 print "<html>"
 print '<br/>'
 print '<style>'
