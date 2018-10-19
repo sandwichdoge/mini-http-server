@@ -1,3 +1,5 @@
+#include <time.h>
+
 /*system_output()
  *execute external program and return its output.
  *args          : array of strings of program to call and arguments to pass, must be null terminated
@@ -6,7 +8,7 @@
  *time_out  : time out in miliseconds. 
  *CALLER IS RESPONSIBLE FOR FREEING RETURNED MEMORY AFTER USE
  */
-char* system_output(char **args, long *output_sz, int *retcode, int time_out_ms)
+char* system_output(char **args, long *output_sz, int *retcode, int timeout_ms)
 {
     int fds[2];
     int buf[4096];
@@ -23,6 +25,8 @@ char* system_output(char **args, long *output_sz, int *retcode, int time_out_ms)
         execvp(args[0], args);  //child process will now be cannibalized
     }
     else {  //is parent
+        clock_t timer_init = clock();
+        clock_t timer_diff;
         int ret_code = -1;  //exit code of child process
         long bytes_read_total = 0;
         long bytes_read_last = 0;
@@ -31,7 +35,7 @@ char* system_output(char **args, long *output_sz, int *retcode, int time_out_ms)
         char *output = malloc(1);
         fcntl(fds[0], F_SETFL, O_NONBLOCK); /*non-blocking IO, https://stackoverflow.com/questions/8130922/processes-hang-on-read
                                                                 since read() will hang when reading from empty pipe if this option is not set*/
-        while (time_out_ms) {  //soft, non-RT sleep
+        while (1) {
             pid_s = waitpid(pid, &ret_code, WNOHANG);
             if (pid_s > 0) brkflag = 1; //child exited, read from buf 1 last time then break
             bytes_read_last = read(fds[0], buf, sizeof(buf));
@@ -45,7 +49,8 @@ char* system_output(char **args, long *output_sz, int *retcode, int time_out_ms)
             if (brkflag) {
                 break;
             }
-            //time_out_ms -= 1;
+            timer_diff = (clock() - timer_init) * 1000 / CLOCKS_PER_SEC;
+            if (timer_diff > timeout_ms) break;
         }
         close(fds[0]);
         close(fds[1]);

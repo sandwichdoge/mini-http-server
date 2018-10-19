@@ -150,7 +150,7 @@ void *conn_handler(void *vargs)
     char *request = NULL;
     char *_new_request;
     SSL *conn_SSL = NULL;
-    printf("Connection established, fd: %d\n", client_fd); fflush(stdout);
+    //printf("Connection established, fd: %d\n", client_fd); fflush(stdout);
 
     /*Initialize SSL connection*/
     if (is_ssl) {
@@ -176,7 +176,7 @@ void *conn_handler(void *vargs)
             goto cleanup;
         }
     }
-    
+
     //PROCESS HTTP REQUEST FROM CLIENT
     /*read data via TCP stream, append new data to heap
      *keep reading and allocating memory for new data until NULL or 20MB max reached
@@ -244,18 +244,17 @@ void *conn_handler(void *vargs)
         char *args[] = {interpreter, p, req.body, req.cookie, NULL};
         if (req.body_len) req.body[req.body_len] = 0; //NULL terminate upon GET with params, if it's POST, no body_len is returned
         int ret_code;
-        char *data = system_output(args, &sz, &ret_code, 10000000);
+        char *data = system_output(args, &sz, &ret_code, 20000); //20s timeout on backend script
         if (ret_code < 0) { //if there's error in backend script, send err500 and skip sending returned data
             http_send_error(client_fd, 500, conn_SSL);
             goto cleanup_data;
         }
-        //printf("%d %d\n", strlen(data), sz);
         
         get_mime_type(mime_type, req.URI); //MIME type for response header
         sprintf(content_len, "%d\n", sz); //content-length for response header - equivalent to itoa(content_len)
 
         //generate header based on data returned from interpreter program
-        generate_header(header, data, mime_type, content_len); //TODO: fix this
+        generate_header(header, data, mime_type, content_len);
 
         //determine where the body is in returned data and send it to client
         char *doc;
