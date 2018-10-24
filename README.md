@@ -1,12 +1,12 @@
 # mini-http-server
-Minimal HTTP server in C with SSL support.
+Minimal HTTP server in C with SSL and backend scripting support.
 
-TODO: handle date, log.
 
 - Compile
 ```
 make
-male ssl-ca
+make config #generate http.conf file
+make ssl-ca #if you want a new keypair for https
 make clean
 ```
 
