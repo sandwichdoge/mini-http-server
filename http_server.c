@@ -46,18 +46,15 @@ typedef struct client_info {
     int client_fd;
 } client_info;
 
-char SITEPATH[512] = ""; //physical path of website on disk
+char SITEPATH[1024] = ""; //physical path of website on disk
 char HOMEPAGE[512] = ""; //default index page
-char CERT_PUB_KEY_FILE[512];
-char CERT_PRIV_KEY_FILE[512];
+char CERT_PUB_KEY_FILE[1024]; //pem file cert
+char CERT_PRIV_KEY_FILE[1024]; //pem file cert
 int PORT = 80; //default port 80
 int PORT_SSL = 443; //default port for SSL is 443
 SSL_CTX *CTX;
 
-void handle_SIGABRT()
-{
-    fprintf(stderr, "SIGABRT received\n"); fflush(stderr);
-}
+
 
 int main()
 {
@@ -89,14 +86,15 @@ int main()
     //SSL_CTX_set_session_cache_mode(CTX, SSL_SESS_CACHE_SERVER); CACHE_SERVER is default setting, no need to set again
 
 
-    SSL_CTX_use_certificate_file(CTX, CERT_PUB_KEY_FILE , SSL_FILETYPE_PEM);
+    SSL_CTX_use_certificate_file(CTX, CERT_PUB_KEY_FILE, SSL_FILETYPE_PEM);
     SSL_CTX_use_PrivateKey_file(CTX, CERT_PRIV_KEY_FILE, SSL_FILETYPE_PEM);
     if (!SSL_CTX_check_private_key(CTX)) {
         fprintf(stderr,"SSL WARNING: Private key does not match certificate public key.\n");
     }
     
+
     printf("Started HTTP server on port %d and %d..\n", PORT, PORT_SSL);
-    pid_t pid = fork(); //1 thread for HTTP, 1 for HTTPS
+    pid_t pid = fork(); //1 process for HTTP, 1 for HTTPS
     if (pid == 0) {
         while (1) {
             ssl_fd = accept(sock_ssl.fd, (struct sockaddr*)sock_ssl.handle, &sock_ssl.len);
@@ -191,7 +189,10 @@ void *conn_handler(void *vargs)
         else { //regular http without ssl
             n = read_data(client_fd, buf, sizeof(buf));
         }
-        if (n < 0) goto cleanup;
+        if (n < 0) {
+            fprintf(stderr, "Error reading data from client. fd: %d.\n", client_fd);
+            goto cleanup;
+        }
         
         if (n > 0) {
             bytes_read += n;
@@ -206,7 +207,12 @@ void *conn_handler(void *vargs)
         
     } while (buf[sizeof(buf)] != 0 && bytes_read < MAX_REQUEST_LEN); //stop if request is larger than 20MB or reached NULL
 
-    struct http_request req = process_request(request); //process returned data
+    if (bytes_read == 0) goto cleanup; //received empty request
+
+
+    //PROCESS RETURNED DATA
+    struct http_request req = process_request(request); 
+
 
     //SERVE CLIENT REQUEST
     //PROCESS URI (decode url, check privileges or if file exists)
@@ -214,19 +220,22 @@ void *conn_handler(void *vargs)
     if (strcmp(req.URI, "/") == 0) strcpy(req.URI, HOMEPAGE); //when URI is "/", e.g. GET / HTTP/1.1
     decode_url(decoded_uri, req.URI); //decode url (%69ndex.html -> index.html)
 
-    strcpy(local_uri, SITEPATH); //allow only resources in site directory
+    strncpy(local_uri, SITEPATH, sizeof(SITEPATH)); //allow only resources in site directory
     strncat(local_uri, decoded_uri, sizeof(decoded_uri) - sizeof(SITEPATH)); //local_uri: local path of requested resource
 
     if (!is_valid_method(req.method)) {
         http_send_error(client_fd, 400, conn_SSL); //then send 400 to client
+        fprintf(stderr, "Unknown request method from client: %s.\n", req.method); fflush(stderr);
         goto cleanup;
     }
 
     if (file_exists(local_uri) < 0) { //if local resource doesn't exist
+        fprintf(stderr, "Client requested non-existent resource %1024s.\n", local_uri); fflush(stderr);
         http_send_error(client_fd, 404, conn_SSL); //then send 404 to client
         goto cleanup;
     }
     if (file_readable(local_uri) < 0) { //local resource isn't read-accessible
+        fprintf(stderr, "Local resource is inaccessible.\n"); fflush(stderr);
         http_send_error(client_fd, 403, conn_SSL);  //then send 403 to client
         goto cleanup;
     }
@@ -285,7 +294,7 @@ void *conn_handler(void *vargs)
         strcat(header, "Content-Type: ");
         strcat(header, mime_type);
         
-        strcat(header, "\nContent-Length: ");
+        strcat(header, "\ncontent-length: ");
         sprintf(content_len, "%d", sz);
         strcat(header, content_len);
 
@@ -360,9 +369,9 @@ int generate_header(char *header, char *body, char *mime_type, char *content_len
     if (header[strlen(header) - 1] != '\n') { //if backend doesnt conclude their header with \n\n, do it for them
         strcat(header, "\r\n");
     }
-    strcat(header, "Content-Length: ");
+    strcat(header, "content-length: ");
     strcat(header, content_len);
-    strcat(header, "Server: mini-http-server\r\n\r\n");
+    strcat(header, "server: mini-http-server\r\n\r\n");
 
     return 0;
 }
@@ -383,10 +392,10 @@ int is_valid_method(char *method)
 //read local_uri and write to client socket pointed to by client_fd
 void serve_static_content(int client_fd, char *local_uri, long content_len, SSL *conn_SSL)
 {
-    int bytes_read = 0;
-    char response[4096];
+    int bytes_read = 0; //bytes read from local resource
+    char response[4096]; //buffer
     int content_fd = open(local_uri, O_RDONLY); //get requested file content
-    int bytes_written = 0;
+    int bytes_written = 0; //bytes sent to remote client
     bytes_read = 0;
 
     while (bytes_written < content_len) {
