@@ -1,7 +1,10 @@
 #ifndef _http_request_h
 #define _http_request_h
+#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include "str-utils/str-utils.h"
+
 struct http_request {
     char cookie[4096];
     char URI[2048];
@@ -16,5 +19,5 @@ struct http_request {
 struct http_request process_request(char *request);
 
 //Convert URI code to real filename.
-void decode_url(char *out, char *url);
+void decode_url(char *out, char *in);
 #endif

@@ -1,7 +1,6 @@
 #include "http-request.h"
-#include <stdio.h>
 
-//return info about request like method, uri, http version, etc.
+//return info about client request like method, uri, http version, etc.
 struct http_request process_request(char *request)
 {
     struct http_request ret;
@@ -26,7 +25,7 @@ struct http_request process_request(char *request)
     char *URI = strchr(request, ' ');
     char *URI_end = NULL;
     if (URI) {
-        URI_end = strchr(URI + 1, '?');
+        URI_end = strchrln(URI + 1, '?');
         if (URI_end) { //somebody tries to send a form with GET method
             //handle it anyway?
             is_GET_with_params = 1;
@@ -92,19 +91,41 @@ struct http_request process_request(char *request)
 }
 
 
-//%69ndex.html => index.html
-void decode_url(char *out, char *url)
+//Fast url decoder %69ndex.html => index.html
+void decode_url(char *out, char *in)
 {
-    char buf[3];
-    char c;
-    for (int i = 0; url[i]; ++i) {
-        if (url[i] == '%') {
-            i++;
-            memcpy(buf, &url[i], 2);
-            c = (char)strtoul(buf, 0, 16);
-            i += 1;
+    static const char tbl[256] = {
+        -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+         0, 1, 2, 3, 4, 5, 6, 7,  8, 9,-1,-1,-1,-1,-1,-1,
+        -1,10,11,12,13,14,15,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+        -1,10,11,12,13,14,15,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1
+    };
+    char c, v1, v2;
+    char *beg=out;
+    if(in != NULL) {
+        while((c=*in++) != '\0') {
+            if(c == '%') {
+                if(!(v1=*in++) || (v1=tbl[(unsigned char)v1])<0 || !(v2=*in++) || (v2=tbl[(unsigned char)v2])<0) {
+                    *beg = '\0';
+                    break;//return -1;
+                }
+                c = (v1<<4)|v2;
+            }
+            *out++ = c;
         }
-        else c = url[i];
-        *(out++) = c;
     }
+    *out = '\0';
+    return;
 }
