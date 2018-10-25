@@ -13,7 +13,7 @@
 #include "mime/http-mimes.h"
 #include "sysout.h"
 #include "casing.h" //uppercase() and lowercase()
-#include "str-utils.h" //strinsert()
+#include "str-utils/str-utils.h"
 
 #define MAX_REQUEST_LEN 20*1000*1024
 
@@ -43,10 +43,12 @@ int generate_header(char *header, char *body, char *mime_type, char *content_len
 
 typedef struct client_info {
     int is_ssl;
-    int client_fd;
+    struct server_socket server_socket;
 } client_info;
 
+
 char SITEPATH[1024] = ""; //physical path of website on disk
+int SITEPATH_LEN = 0;
 char HOMEPAGE[512] = ""; //default index page
 char CERT_PUB_KEY_FILE[1024]; //pem file cert
 char CERT_PRIV_KEY_FILE[1024]; //pem file cert
@@ -74,7 +76,7 @@ int main()
     struct server_socket sock_ssl = create_server_socket(PORT_SSL);
     int http_fd= 0, ssl_fd = 0; //session fd between client and server
     client_info args;
-    pthread_t pthread;
+    pthread_t pthread1, pthread2, pthread3, pthread4; //4 child threads
 
 
     initialize_SSL();
@@ -89,41 +91,31 @@ int main()
     SSL_CTX_use_certificate_file(CTX, CERT_PUB_KEY_FILE, SSL_FILETYPE_PEM);
     SSL_CTX_use_PrivateKey_file(CTX, CERT_PRIV_KEY_FILE, SSL_FILETYPE_PEM);
     if (!SSL_CTX_check_private_key(CTX)) {
-        fprintf(stderr,"SSL WARNING: Private key does not match certificate public key.\n");
+        fprintf(stderr,"SSL FATAL ERROR: Private key does not match certificate public key.\n");
     }
     
 
     printf("Started HTTP server on port %d and %d..\n", PORT, PORT_SSL);
     pid_t pid = fork(); //1 process for HTTP, 1 for HTTPS
     if (pid == 0) {
-        while (1) {
-            ssl_fd = accept(sock_ssl.fd, (struct sockaddr*)sock_ssl.handle, &sock_ssl.len);
-            if (ssl_fd> 0) {
-                args.is_ssl = 1;
-                args.client_fd = ssl_fd;
-                /*Handle SIGPIPE signals, caused by writing to connection that's already closed by client*/
-                signal(SIGPIPE, SIG_IGN);
-                pthread_create(&pthread, NULL, conn_handler, (void*)&args); //create a thread for each new connection
-            }
-            usleep(5000); //handle racing condition. TODO: better than this
-        }
+        args.is_ssl = 1;
+        args.server_socket = sock_ssl;
     }
     else {
-        while (1) {
-            http_fd = accept(sock.fd, (struct sockaddr*)sock.handle, &sock.len);
-            if (http_fd> 0) {
-                args.is_ssl = 0;
-                args.client_fd = http_fd;
-                /*Handle SIGPIPE signals, caused by writing to connection that's already closed by client*/
-                signal(SIGPIPE, SIG_IGN);
-                pthread_create(&pthread, NULL, conn_handler, (void*)&args); //create a thread for each new connection
-            }
-            usleep(5000);
-        }
+        args.is_ssl = 0;
+        args.server_socket = sock;
     }
 
-    printf("Server stopped.\n");
-    shutdown_SSL();
+    /*FROM THIS POINT ON WE HAVE 8 CHILD THREADS, 4 FOR HTTP AND 4 FOR HTTPS*/
+    signal(SIGPIPE, SIG_IGN);
+    pthread_create(&pthread1, NULL, conn_handler, (void*)&args); //create a thread for each new connection
+    pthread_create(&pthread2, NULL, conn_handler, (void*)&args); //create a thread for each new connection
+    pthread_create(&pthread3, NULL, conn_handler, (void*)&args); //create a thread for each new connection
+    pthread_create(&pthread4, NULL, conn_handler, (void*)&args); //create a thread for each new connection
+
+    for (;;); //infinite main thread loop
+    //printf("Server stopped.\n");
+    //shutdown_SSL();
     return 0;
 }
 
@@ -135,20 +127,37 @@ int main()
 void *conn_handler(void *vargs)
 {
     client_info *args = (client_info*) vargs;
-    int client_fd = args->client_fd;
+    int client_fd = 0;//args->client_fd;
+    struct server_socket server_socket = args->server_socket;
     int is_ssl = args->is_ssl;
-    int bytes_read = 0;
-    int ssl_err = 0;
-    char buf[4096*2] = "";
-    char local_uri[2048] = "";
-    char mime_type[128] = "";
-    char header[1024] = "";
+    char buf[4096*2];
+    char local_uri[2048];
+    char decoded_uri[2048];
+    char mime_type[128];
+    char header[1024];
     char content_len[16];
     long sz;
+
+    /*LOOP HERE*/
+    while (1) { //these declarations should be optimized by compiler anyway, it's ok to declare within loop
+
+    int bytes_read = 0;
+    int ssl_err = 0;
     char *request = NULL;
     char *_new_request;
     SSL *conn_SSL = NULL;
-    //printf("Connection established, fd: %d\n", client_fd); fflush(stdout);
+
+    memset(buf, 0, sizeof(buf));
+    memset(local_uri, 0, sizeof(local_uri));
+    memset(decoded_uri, 0, sizeof(decoded_uri));
+    memset(mime_type, 0, sizeof(mime_type));
+    memset(header, 0, sizeof(header));
+    memset(content_len, 0, sizeof(content_len));
+
+
+    client_fd = accept(server_socket.fd, (struct sockaddr*)server_socket.handle, &server_socket.len);
+    //pthread_t pt = pthread_self();
+    //printf("Connection established, fd:%d, thread:%d\n", client_fd, pt); fflush(stdout);
 
     /*Initialize SSL connection*/
     if (is_ssl) {
@@ -213,15 +222,13 @@ void *conn_handler(void *vargs)
     //PROCESS RETURNED DATA
     struct http_request req = process_request(request); 
 
-
     //SERVE CLIENT REQUEST
     //PROCESS URI (decode url, check privileges or if file exists)
-    char decoded_uri[2048];
     if (strcmp(req.URI, "/") == 0) strcpy(req.URI, HOMEPAGE); //when URI is "/", e.g. GET / HTTP/1.1
     decode_url(decoded_uri, req.URI); //decode url (%69ndex.html -> index.html)
 
-    strncpy(local_uri, SITEPATH, sizeof(SITEPATH)); //allow only resources in site directory
-    strncat(local_uri, decoded_uri, sizeof(decoded_uri) - sizeof(SITEPATH)); //local_uri: local path of requested resource
+    strncpy(local_uri, SITEPATH, SITEPATH_LEN); //allow only resources in site directory
+    strncat(local_uri, decoded_uri, sizeof(decoded_uri) - SITEPATH_LEN); //local_uri: local path of requested resource
 
     if (!is_valid_method(req.method)) {
         http_send_error(client_fd, 400, conn_SSL); //then send 400 to client
@@ -317,6 +324,7 @@ void *conn_handler(void *vargs)
     if (is_ssl && conn_SSL != NULL) disconnect_SSL(conn_SSL, ssl_err); //will call additional SSL_free() if there's error (ssl_err != 0)
     sock_cleanup(client_fd);
     //printf("Cleaned up.\n"); fflush(stdout);
+    }
 
     return NULL;
 }
@@ -466,6 +474,7 @@ int load_global_config()
     s += 5; //len of "PATH="
     memcpy(SITEPATH, s, lnbreak - s);
     if (!is_dir(SITEPATH)) return -2; //invalid SITEPATH
+    SITEPATH_LEN = strnlen(SITEPATH, sizeof(SITEPATH));
 
     //PORT: port to listen on (default 80)
     s = strstr(buf, "PORT=");
