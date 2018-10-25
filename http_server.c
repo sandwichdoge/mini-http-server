@@ -16,6 +16,7 @@
 #include "str-utils/str-utils.h"
 
 #define MAX_REQUEST_LEN 20*1000*1024
+#define MAX_THREADS 32
 
 //gcc http_server.c serversocket.c http-request.c fileops.c http-mimes.c -lpthread
 
@@ -39,6 +40,7 @@ void http_send_error(int client_fd, int errcode, SSL *conn_SSL);
 int is_valid_method(char *method);
 int load_global_config();
 int generate_header(char *header, const char *body, char *mime_type, char *content_len);
+int generate_header_static(char *header, char *mime_type, char *content_len);
 
 
 typedef struct client_info {
@@ -55,7 +57,6 @@ char CERT_PRIV_KEY_FILE[1024]; //pem file cert
 int PORT = 80; //default port 80
 int PORT_SSL = 443; //default port for SSL is 443
 SSL_CTX *CTX;
-
 
 
 int main()
@@ -76,7 +77,7 @@ int main()
     struct server_socket sock_ssl = create_server_socket(PORT_SSL);
     int http_fd= 0, ssl_fd = 0; //session fd between client and server
     client_info args;
-    pthread_t pthread1, pthread2, pthread3, pthread4; //4 child threads
+    pthread_t pthread[MAX_THREADS/2]; //16 child threads
 
 
     initialize_SSL();
@@ -106,14 +107,13 @@ int main()
         args.server_socket = sock;
     }
 
-    /*FROM THIS POINT ON WE HAVE 8 CHILD THREADS, 4 FOR HTTP AND 4 FOR HTTPS*/
+    /*FROM THIS POINT ON WE HAVE n*2 CHILD THREADS, n FOR HTTP AND n FOR HTTPS*/
     signal(SIGPIPE, SIG_IGN);
-    pthread_create(&pthread1, NULL, conn_handler, (void*)&args); //create a thread for each new connection
-    pthread_create(&pthread2, NULL, conn_handler, (void*)&args); //create a thread for each new connection
-    pthread_create(&pthread3, NULL, conn_handler, (void*)&args); //create a thread for each new connection
-    pthread_create(&pthread4, NULL, conn_handler, (void*)&args); //create a thread for each new connection
+    for (int i = 0; i < MAX_THREADS/2 - 1; ++i) {
+        pthread_create(&pthread[i], NULL, conn_handler, (void*)&args); //create a thread for each new connection
+    }
+    conn_handler(&args); //handler for 2 parent threads
 
-    for (;;); //infinite main thread loop
     //printf("Server stopped.\n");
     //shutdown_SSL();
     return 0;
@@ -153,7 +153,6 @@ void *conn_handler(void *vargs)
     memset(mime_type, 0, sizeof(mime_type));
     memset(header, 0, sizeof(header));
     memset(content_len, 0, sizeof(content_len));
-
 
     client_fd = accept(server_socket.fd, (struct sockaddr*)server_socket.handle, &server_socket.len);
     //printf("Connection established, fd:%d, thread:%d\n", client_fd, pthread_self()); fflush(stdout);
@@ -318,11 +317,16 @@ void *conn_handler(void *vargs)
     }
     
     cleanup:
+    if (is_ssl) {
+        int saved_flock = fcntl(client_fd, F_GETFL);
+        fcntl(client_fd, F_SETFL, saved_flock & ~O_NONBLOCK);
+    }
     //shutdown connection and free resources
     if (!ssl_err) free(request); //free() shouldn't do anything if pointer is NULL, but in multithreading it's funky, so check jic
     if (is_ssl && conn_SSL != NULL) disconnect_SSL(conn_SSL, ssl_err); //will call additional SSL_free() if there's error (ssl_err != 0)
     sock_cleanup(client_fd);
     //printf("Cleaned up.\n"); fflush(stdout);
+    
     }
 
     return NULL;
