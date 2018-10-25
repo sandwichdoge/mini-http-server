@@ -38,7 +38,7 @@ void serve_static_content(int client_fd, char *local_uri, long content_len, SSL 
 void http_send_error(int client_fd, int errcode, SSL *conn_SSL);
 int is_valid_method(char *method);
 int load_global_config();
-int generate_header(char *header, char *body, char *mime_type, char *content_len);
+int generate_header(char *header, const char *body, char *mime_type, char *content_len);
 
 
 typedef struct client_info {
@@ -156,10 +156,9 @@ void *conn_handler(void *vargs)
 
 
     client_fd = accept(server_socket.fd, (struct sockaddr*)server_socket.handle, &server_socket.len);
-    //pthread_t pt = pthread_self();
-    //printf("Connection established, fd:%d, thread:%d\n", client_fd, pt); fflush(stdout);
+    //printf("Connection established, fd:%d, thread:%d\n", client_fd, pthread_self()); fflush(stdout);
 
-    /*Initialize SSL connection*/
+    /*INITIALIZE SSL CONNECTION IF CONNECTED VIA HTTPS*/
     if (is_ssl) {
         fcntl(client_fd, F_SETFL, O_NONBLOCK); //non-blocking IO for timeout measure
         conn_SSL = SSL_new(CTX);
@@ -184,7 +183,8 @@ void *conn_handler(void *vargs)
         }
     }
 
-    //PROCESS HTTP REQUEST FROM CLIENT
+
+    /*READ HTTP REQUEST FROM CLIENT (INCLUDE HEADER+BODY)*/
     /*read data via TCP stream, append new data to heap
      *keep reading and allocating memory for new data until NULL or 20MB max reached
      *finally pass it it down to process_request() to get info about it (uri, method, body data)
@@ -219,11 +219,11 @@ void *conn_handler(void *vargs)
     if (bytes_read == 0) goto cleanup; //received empty request
 
 
-    //PROCESS RETURNED DATA
+    /*PROCESS HEADER FROM CLIENT*/
     struct http_request req = process_request(request); 
 
-    //SERVE CLIENT REQUEST
-    //PROCESS URI (decode url, check privileges or if file exists)
+
+    //Process URI (decode url, check privileges or if file exists)
     if (strcmp(req.URI, "/") == 0) strcpy(req.URI, HOMEPAGE); //when URI is "/", e.g. GET / HTTP/1.1
     decode_url(decoded_uri, req.URI); //decode url (%69ndex.html -> index.html)
 
@@ -250,7 +250,8 @@ void *conn_handler(void *vargs)
     //printf("res:%s\n", local_uri); fflush(stdout);
     //TODO: cookie, gzip content, handle other methods like PUT, HEAD, DELETE..
     
-    //PROCESS DATA
+
+    /*SERVE DATA (EITHER STATIC PAGE OR INTERPRETED)*/
     //handle executable requests here
     char interpreter[1024]; //path of interpreter program
     int is_interpretable = file_get_interpreter(local_uri, interpreter, sizeof(interpreter));
@@ -297,21 +298,19 @@ void *conn_handler(void *vargs)
     }
     else if(is_interpretable == 0) { //CASE 2: uri is a static page
         sz = file_get_size(local_uri);
-        strcpy(header, "HTTP/1.1 200 OK\n");
-        strcat(header, "Content-Type: ");
-        strcat(header, mime_type);
-        
-        strcat(header, "\ncontent-length: ");
         sprintf(content_len, "%d", sz);
-        strcat(header, content_len);
 
-        strcat(header, "\r\n\r\n"); //mandatory blank line separating header
+        //generate header for static media
+        generate_header_static(header, mime_type, content_len);
+
+        //send header
         if (is_ssl) {
             send_data_ssl(conn_SSL, header, strlen(header));
         }
         else {
-            send_data(client_fd, header, strlen(header)); //send header
+            send_data(client_fd, header, strlen(header));
         }
+        //send body data
         serve_static_content(client_fd, local_uri, sz, conn_SSL);
     }
     else { //error reading requested data or system can't interpret requested script
@@ -330,10 +329,11 @@ void *conn_handler(void *vargs)
 }
 
 
+//Generate a header based on content of the body
 //body includes everything that backend script prints out, not just html content
 //*header is the processed output
-//*body is IMMUTABLE
-int generate_header(char *header, char *body, char *mime_type, char *content_len)
+//*body is IMMUTABLE, do not attempt to modify it
+int generate_header(char *header, const char *body, char *mime_type, char *content_len)
 {
     char buf[1024] = "";
     char user_defined_header[1024] = "";
@@ -381,6 +381,21 @@ int generate_header(char *header, char *body, char *mime_type, char *content_len
     strcat(header, content_len);
     strcat(header, "server: mini-http-server\r\n\r\n");
 
+    return 0;
+}
+
+
+/*Generate header for static media*/
+int generate_header_static(char *header, char *mime_type, char *content_len)
+{
+    strcpy(header, "HTTP/1.1 200 OK\n");
+    strcat(header, "Content-Type: ");
+    strcat(header, mime_type);
+    
+    strcat(header, "\ncontent-length: ");
+    strcat(header, content_len);
+
+    strcat(header, "\r\n\r\n"); //mandatory blank line separating header
     return 0;
 }
 
