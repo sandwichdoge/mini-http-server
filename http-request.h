@@ -9,6 +9,7 @@ struct http_request {
     char cookie[4096];
     char URI[2048];
     char httpver[16];
+    char conn_type[16];
     char *body;
     long body_len;
     char method[8];

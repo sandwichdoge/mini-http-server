@@ -13,6 +13,7 @@ struct http_request process_request(char *request)
     memset(ret.URI, 0, sizeof(ret.URI));
     memset(ret.method, 0, sizeof(ret.method));
     memset(ret.httpver, 0, sizeof(ret.httpver));
+    memset(ret.conn_type, 0, sizeof(ret.conn_type));
     memset(ret.cookie, 0, sizeof(ret.cookie));
     ret.body_len = 0;
 
@@ -55,6 +56,16 @@ struct http_request process_request(char *request)
     }
     else {
         strcpy(ret.httpver, "HTTP/1.1"); //use default HTTP ver
+    }
+
+    //Connection type (keep-alive/close)
+    char *conn_type;
+    conn_type = strstr(URI + uri_len, "Connection: ");
+    if (conn_type) {
+        strncpy(ret.conn_type, conn_type + strlen("Connection: "), strchr(conn_type, '\n') - conn_type - strlen("Connection: "));
+    }
+    else {
+        strcpy(ret.conn_type, "close");
     }
 
     //Cookie
