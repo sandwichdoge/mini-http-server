@@ -182,7 +182,6 @@ void *conn_handler(void *vargs)
         }
     }
 
-
     /*READ HTTP REQUEST FROM CLIENT (INCLUDE HEADER+BODY)*/
     /*read data via TCP stream, append new data to heap
      *keep reading and allocating memory for new data until NULL or 20MB max reached
@@ -296,6 +295,8 @@ void *conn_handler(void *vargs)
         free(data);
     }
     else if(is_interpretable == 0) { //CASE 2: uri is a static page
+        get_mime_type(mime_type, req.URI); //MIME type for response header
+
         sz = file_get_size(local_uri);
         sprintf(content_len, "%d", sz);
 
