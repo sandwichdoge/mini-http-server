@@ -95,7 +95,6 @@ int main()
         fprintf(stderr,"SSL FATAL ERROR: Can't open key files or private key does not match certificate public key.\n");
     }
     
-
     printf("Started HTTP server on port %d and %d..\n", PORT, PORT_SSL);
     pid_t pid = fork(); //1 process for HTTP, 1 for HTTPS
     if (pid == 0) {
@@ -486,7 +485,7 @@ int load_global_config()
     int fd = open("http.conf", O_RDONLY);
     if (fd < 0) return -3; //could not open http.conf
     read(fd, buf, sizeof(buf)); //read http.conf file into buf
-
+    
     //SITEPATH: physical path of website
     s = strstr(buf, "PATH=");
     lnbreak = strstr(s, "\n");
@@ -542,8 +541,8 @@ int load_global_config()
 
     //MAX_THREADS: maximum number of concurrent threads
     s = strstr(buf, "MAX_THREADS=");
-    if (s == NULL) PORT = 80; //no PORT config, use default 80
-    s += strlen("MAX_THREADS"); //len of "MAX_THREADS="
+    if (s == NULL) MAX_THREADS = 1024; //no config, use 1024
+    s += strlen("MAX_THREADS="); //len of "MAX_THREADS="
     MAX_THREADS = atoi(s);
 
     //other configs below
