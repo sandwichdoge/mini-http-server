@@ -16,7 +16,6 @@
 #include "str-utils/str-utils.h"
 
 #define MAX_REQUEST_LEN 20*1000*1024
-#define MAX_THREADS 32
 
 //gcc http_server.c serversocket.c http-request.c fileops.c http-mimes.c -lpthread
 
@@ -56,6 +55,7 @@ char CERT_PUB_KEY_FILE[1024]; //pem file cert
 char CERT_PRIV_KEY_FILE[1024]; //pem file cert
 int PORT = 80; //default port 80
 int PORT_SSL = 443; //default port for SSL is 443
+int MAX_THREADS = 1024;
 SSL_CTX *CTX;
 
 
@@ -92,7 +92,7 @@ int main()
     SSL_CTX_use_certificate_file(CTX, CERT_PUB_KEY_FILE, SSL_FILETYPE_PEM);
     SSL_CTX_use_PrivateKey_file(CTX, CERT_PRIV_KEY_FILE, SSL_FILETYPE_PEM);
     if (!SSL_CTX_check_private_key(CTX)) {
-        fprintf(stderr,"SSL FATAL ERROR: Private key does not match certificate public key.\n");
+        fprintf(stderr,"SSL FATAL ERROR: Can't open key files or private key does not match certificate public key.\n");
     }
     
 
@@ -108,7 +108,7 @@ int main()
     }
 
     /*FROM THIS POINT ON WE HAVE n*2 CHILD THREADS, n FOR HTTP AND n FOR HTTPS*/
-    signal(SIGPIPE, SIG_IGN);
+    signal(SIGPIPE, SIG_IGN); //handle premature termination of connection from client
     for (int i = 0; i < MAX_THREADS/2 - 1; ++i) {
         pthread_create(&pthread[i], NULL, conn_handler, (void*)&args); //create a thread for each new connection
     }
@@ -147,6 +147,7 @@ void *conn_handler(void *vargs)
     char *_new_request;
     SSL *conn_SSL = NULL;
 
+    //flush out buffers for security
     memset(buf, 0, sizeof(buf));
     memset(local_uri, 0, sizeof(local_uri));
     memset(decoded_uri, 0, sizeof(decoded_uri));
@@ -236,7 +237,7 @@ void *conn_handler(void *vargs)
     }
 
     if (file_exists(local_uri) < 0) { //if local resource doesn't exist
-        fprintf(stderr, "Client requested non-existent resource %1024s.\n", local_uri); fflush(stderr);
+        fprintf(stderr, "Client requested non-existent resource %s.\n", local_uri); fflush(stderr);
         http_send_error(client_fd, 404, conn_SSL); //then send 404 to client
         goto cleanup;
     }
@@ -538,6 +539,12 @@ int load_global_config()
         s += 17; // len of "SSL_CERT_FILE_PEM="
         memcpy(CERT_PRIV_KEY_FILE, s, lnbreak - s);
     }
+
+    //MAX_THREADS: maximum number of concurrent threads
+    s = strstr(buf, "MAX_THREADS=");
+    if (s == NULL) PORT = 80; //no PORT config, use default 80
+    s += strlen("MAX_THREADS"); //len of "MAX_THREADS="
+    MAX_THREADS = atoi(s);
 
     //other configs below
 

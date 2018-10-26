@@ -9,6 +9,7 @@ conf_port_ssl := PORT_SSL=443
 conf_home := HOME=/index.html
 conf_ssl_cert_file_pem := SSL_CERT_FILE_PEM=$(current_dir)/certificate.pem
 conf_ssl_key_file_pem := SSL_KEY_FILE_PEM=$(current_dir)/key.pem
+conf_max_threads := MAX_THREADS=1024
 
 
 all: http_server.o socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o str-utils/str-utils.o
@@ -23,6 +24,8 @@ config:
 	@echo $(conf_home) >> http.conf
 	@echo $(conf_ssl_cert_file_pem) >> http.conf
 	@echo $(conf_ssl_key_file_pem) >> http.conf
+	@echo $(conf_max_threads) >> http.conf
+
 
 
 http_server.o: http_server.c socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o casing.h str-utils/str-utils.o sysout.h
@@ -53,4 +56,4 @@ ssl-ca:
 
 
 clean:
-	rm socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o http_server.o
+	rm socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o str-utils/str-utils.o http_server.o
