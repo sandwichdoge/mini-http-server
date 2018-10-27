@@ -73,6 +73,7 @@ int main()
             printf("Fatal error: cannot open http.conf\n");
     }
 
+    chdir(SITEPATH);
     struct server_socket sock = create_server_socket(PORT);
     struct server_socket sock_ssl = create_server_socket(PORT_SSL);
     int http_fd= 0, ssl_fd = 0; //session fd between client and server
@@ -145,6 +146,7 @@ void *conn_handler(void *vargs)
     char *request = NULL;
     char *_new_request;
     SSL *conn_SSL = NULL;
+    char *_plocal_uri = NULL;
 
     //flush out buffers for security
     memset(buf, 0, sizeof(buf));
@@ -172,7 +174,7 @@ void *conn_handler(void *vargs)
         int counter = 200; //timeout counter: 10s
         do {
             ssl_err = SSL_get_error(conn_SSL, SSL_accept(conn_SSL));
-            usleep(50000); //check state every 0.05s
+            usleep(10000); //check state every 0.01s
             --counter;
         } while (ssl_err == 2 && counter > 0); //ssl_err == 2 means handshake is still in process
 
