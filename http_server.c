@@ -383,10 +383,9 @@ int generate_header(char *header, const char *body, char *mime_type, char *conte
 
 
     //add content-length to header
-    if (header[strlen(header) - 1] != '\n') { //if backend doesnt conclude their header with \n\n, do it for them
-        strcat(header, "\r\n");
-    }
-    strcat(header, "content-length: ");
+    strip_trailing_lf(header, 2);
+
+    strcat(header, "\ncontent-length: ");
     strcat(header, content_len);
     strcat(header, "server: mini-http-server\r\n\r\n");
 
@@ -540,7 +539,7 @@ int load_global_config()
     }
     else {
         lnbreak = strstr(s, "\n");
-        s += 17; // len of "SSL_CERT_FILE_PEM="
+        s += 17; // len of "SSL_KEY_FILE_PEM="
         memcpy(CERT_PRIV_KEY_FILE, s, lnbreak - s);
     }
 

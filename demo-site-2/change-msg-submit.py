@@ -25,7 +25,7 @@ f.write(msg)
 f.close()
 '''
 
-raw = sys.argv[1]
+raw = sys.argv[3] #request body
 msg = get_field_value(raw, 'msg')
 f = open('msg.txt', 'w+')
 f.write(msg)

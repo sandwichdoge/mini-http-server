@@ -22,3 +22,20 @@ char *strchrln(char *str, char c)
     }
     return NULL;
 }
+
+/*strip trailing CRLF*/
+int strip_trailing_lf(char *str, int how_many)
+{
+    int len = 0;
+    for (int i = 0; i < how_many; i++) {
+        len = strlen(str);
+        if (strcmp(&str[len-2], "\r\n") == 0) {
+            str[len-2] = '\0';
+        }
+        else if (strcmp(&str[len-1], "\n") == 0 ) {
+            str[len-1] = '\0';
+        }
+    }
+    
+    return 0;
+}

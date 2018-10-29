@@ -9,4 +9,7 @@ void str_insert(char *str, int pos, char *substr);
 /*find pos of character c in the first line of str*/
 char *strchrln(char *str, char c);
 
+/*strip trailing CRLF*/
+int strip_trailing_lf(char *str, int how_many);
+
 #endif
