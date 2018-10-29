@@ -67,18 +67,19 @@ int main()
             printf("Fatal error in http.conf: No PATH parameter specified.\n");
             return -1;
         case -2:
-            printf("Fatal error in http.conf: Invalid SITEPATH parameter.\n");
+            printf("Fatal error in http.conf: Invalid PATH parameter.\n");
             return -1;
         case -3:
             printf("Fatal error: cannot open http.conf\n");
+            return -1;
     }
 
-    chdir(SITEPATH);
+    chdir(SITEPATH); //change working dir to physical path of site
+
     struct server_socket sock = create_server_socket(PORT);
     struct server_socket sock_ssl = create_server_socket(PORT_SSL);
-    int http_fd= 0, ssl_fd = 0; //session fd between client and server
     client_info args;
-    pthread_t pthread[MAX_THREADS/2]; //16 child threads
+    pthread_t pthread[MAX_THREADS/2];
 
 
     initialize_SSL();
@@ -107,7 +108,7 @@ int main()
         args.server_socket = sock;
     }
 
-    /*FROM THIS POINT ON WE HAVE n*2 CHILD THREADS, n FOR HTTP AND n FOR HTTPS*/
+    /*FROM THIS POINT ON WE HAVE n CHILD THREADS, n/2 FOR HTTP AND n/2 FOR HTTPS*/
     signal(SIGPIPE, SIG_IGN); //handle premature termination of connection from client
     for (int i = 0; i < MAX_THREADS/2 - 1; ++i) {
         pthread_create(&pthread[i], NULL, conn_handler, (void*)&args); //create a thread for each new connection
@@ -146,7 +147,6 @@ void *conn_handler(void *vargs)
     char *request = NULL;
     char *_new_request;
     SSL *conn_SSL = NULL;
-    char *_plocal_uri = NULL;
 
     //flush out buffers for security
     memset(buf, 0, sizeof(buf));
@@ -258,8 +258,10 @@ void *conn_handler(void *vargs)
     if (is_interpretable > 0) { //CASE 1: uri is an executable file
         /*call interpreter, pass request body as argument*/
         char *p = local_uri;
-        char *args[] = {interpreter, p, req.body, req.cookie, NULL};
-        if (req.body_len) req.body[req.body_len] = 0; //NULL terminate upon GET with params, if it's POST, no body_len is returned
+        char *args[] = {interpreter, p, req.method, req.URI, req.body, req.cookie, NULL};
+        //NULL terminate body (only happens during GET with param requests), if request is POST, that means no body_len was returned
+        if (req.body_len) req.body[req.body_len] = 0;
+        
         int ret_code;
         char *data = system_output(args, &sz, &ret_code, 20000); //20s timeout on backend script
         if (ret_code < 0) { //if there's error in backend script, send err500 and skip sending returned data
