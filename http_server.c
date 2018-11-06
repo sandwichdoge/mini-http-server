@@ -121,10 +121,9 @@ int main()
 }
 
 
-//handle an incoming connection
-//return nothing
-//*fd is pointer the file descriptor of client socket
-//TODO: date, proper log
+/*handle an incoming connection
+ *return nothing
+ *TODO: date, proper log, pass interpreter vars to env to support CGI*/
 void *conn_handler(void *vargs)
 {
     client_info *args = (client_info*) vargs;
@@ -157,7 +156,7 @@ void *conn_handler(void *vargs)
     memset(content_len, 0, sizeof(content_len));
 
     client_fd = accept(server_socket.fd, (struct sockaddr*)server_socket.handle, &server_socket.len);
-    //printf("Connection established, fd:%d, thread:%d\n", client_fd, pthread_self()); fflush(stdout);
+    printf("Connection established, fd:%d, thread:%d\n", client_fd, pthread_self()); fflush(stdout);
 
     /*INITIALIZE SSL CONNECTION IF CONNECTED VIA HTTPS*/
     if (is_ssl) {
@@ -270,7 +269,7 @@ void *conn_handler(void *vargs)
         }
         
         get_mime_type(mime_type, req.URI); //MIME type for response header
-        sprintf(content_len, "%d\n", sz); //content-length for response header - equivalent to itoa(content_len)
+        sprintf(content_len, "%ld\n", sz); //content-length for response header - equivalent to itoa(content_len)
 
         //generate header based on data returned from interpreter program
         generate_header(header, data, mime_type, content_len);
@@ -302,7 +301,7 @@ void *conn_handler(void *vargs)
         get_mime_type(mime_type, req.URI); //MIME type for response header
 
         sz = file_get_size(local_uri);
-        sprintf(content_len, "%d", sz);
+        sprintf(content_len, "%ld", sz);
 
         //generate header for static media
         generate_header_static(header, mime_type, content_len);
@@ -330,7 +329,7 @@ void *conn_handler(void *vargs)
     if (!ssl_err) free(request); //free() shouldn't do anything if pointer is NULL, but in multithreading it's funky, so check jic
     if (is_ssl && conn_SSL != NULL) disconnect_SSL(conn_SSL, ssl_err); //will call additional SSL_free() if there's error (ssl_err != 0)
     sock_cleanup(client_fd);
-    //printf("Cleaned up.\n"); fflush(stdout);
+    printf("Cleaned up.\n"); fflush(stdout);
     
     }
 
