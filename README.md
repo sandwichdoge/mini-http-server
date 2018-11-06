@@ -11,7 +11,8 @@ make ssl-ca #if you want a new keypair for https
 make clean
 ```
 
-# Configure: Edit 'http.conf' file.
+# Configure
+- Edit 'http.conf' file.
 
 # Run
 ```
