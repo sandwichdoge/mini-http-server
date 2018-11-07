@@ -8,6 +8,7 @@
 struct http_request {
     char cookie[4096];
     char URI[2048];
+    char accept[128];
     char httpver[16];
     char conn_type[16];
     char *body;
@@ -17,7 +18,7 @@ struct http_request {
 };
 
 //Return info about http request, must call cleanup_request() after use.
-struct http_request process_request(char *request);
+struct http_request *process_request(char *request);
 
 //Convert URI code to real filename.
 void decode_url(char *out, char *in);

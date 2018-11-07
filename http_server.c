@@ -38,7 +38,7 @@ void serve_static_content(int client_fd, char *local_uri, long content_len, SSL 
 void http_send_error(int client_fd, int errcode, SSL *conn_SSL);
 int is_valid_method(char *method);
 int load_global_config();
-int generate_header(char *header, const char *body, char *mime_type, char *content_len);
+int generate_header(char *header, char *body, char *mime_type, char *content_len);
 int generate_header_static(char *header, char *mime_type, char *content_len);
 
 
@@ -156,7 +156,7 @@ void *conn_handler(void *vargs)
     memset(content_len, 0, sizeof(content_len));
 
     client_fd = accept(server_socket.fd, (struct sockaddr*)server_socket.handle, &server_socket.len);
-    printf("Connection established, fd:%d, thread:%d\n", client_fd, pthread_self()); fflush(stdout);
+    //printf("Connection established, fd:%d, thread:%d\n", client_fd, pthread_self()); fflush(stdout);
 
     /*INITIALIZE SSL CONNECTION IF CONNECTED VIA HTTPS*/
     if (is_ssl) {
@@ -215,23 +215,26 @@ void *conn_handler(void *vargs)
         
     } while (buf[sizeof(buf)] != 0 && bytes_read < MAX_REQUEST_LEN); //stop if request is larger than 20MB or reached NULL
 
-    if (bytes_read == 0) goto cleanup; //received empty request
+    if (bytes_read == 0) {
+        fprintf(stdin, "Received empty request.\n"); fflush(stdin);
+        goto cleanup; //received empty request
+    }
 
 
     /*PROCESS HEADER FROM CLIENT*/
-    struct http_request req = process_request(request); 
+    struct http_request *req = process_request(request);
 
 
     //Process URI (decode url, check privileges or if file exists)
-    if (strcmp(req.URI, "/") == 0) strcpy(req.URI, HOMEPAGE); //when URI is "/", e.g. GET / HTTP/1.1
-    decode_url(decoded_uri, req.URI); //decode url (%69ndex.html -> index.html)
+    if (strcmp(req->URI, "/") == 0) strcpy(req->URI, HOMEPAGE); //when URI is "/", e.g. GET / HTTP/1.1
+    decode_url(decoded_uri, req->URI); //decode url (%69ndex.html -> index.html)
 
     strncpy(local_uri, SITEPATH, SITEPATH_LEN); //allow only resources in site directory
     strncat(local_uri, decoded_uri, sizeof(decoded_uri) - SITEPATH_LEN); //local_uri: local path of requested resource
 
-    if (!is_valid_method(req.method)) {
+    if (!is_valid_method(req->method)) {
         http_send_error(client_fd, 400, conn_SSL); //then send 400 to client
-        fprintf(stderr, "Unknown request method from client: %s.\n", req.method); fflush(stderr);
+        fprintf(stderr, "Unknown request method from client: %s.\n", req->method); fflush(stderr);
         goto cleanup;
     }
 
@@ -255,24 +258,56 @@ void *conn_handler(void *vargs)
     char interpreter[1024]; //path of interpreter program
     int is_interpretable = file_get_interpreter(local_uri, interpreter, sizeof(interpreter));
     if (is_interpretable > 0) { //CASE 1: uri is an executable file
+
         /*call interpreter, pass request body as argument*/
         char *p = local_uri;
-        char *args[] = {interpreter, p, req.method, req.URI, req.body, req.cookie, NULL};
+    
+        /*handle env variables here
+         *REQUEST_METHOD, CONTENT_TYPE (file upload), CONTENT_LENGTH, HTTP_COOKIE, PATH_INFO, QUERY_STRING (get w params),
+         *SCRIPT_FILENAME
+         */
+        char *env_method = malloc(strlen("REQUEST_METHOD=") + strlen(req->method) + 1);
+        char *env_cookie = malloc(strlen("HTTP_COOKIE=") + strlen(req->cookie) + 1);
+        char *env_scriptpath = malloc(strlen("SCRIPT_FILENAME=") + strlen(p) + 1);
+        char *env_scripturi = malloc(strlen("SCRIPT_URI") + strlen(req->URI) + 1);
+        char *env_accept = malloc(strlen("HTTP_ACCEPT=") + strlen(req->accept) + 1);
+        char *env_querystr;
+        if (strcmp(req->method, "GET") == 0) 
+            env_querystr = malloc(strlen("QUERY_STRING=") + strlen(req->body) + 1);
+        else
+            env_querystr = calloc(strlen("QUERY_STRING=") + 1, 1);
+
+        strcpy(env_method, "REQUEST_METHOD="); strcat(env_method, req->method);
+        strcpy(env_cookie, "HTTP_COOKIE="); strcat(env_cookie, req->cookie);
+        strcpy(env_scriptpath, "SCRIPT_FILENAME="); strcat(env_scriptpath, p);
+        strcpy(env_scripturi, "SCRIPT_URI="); strcat(env_scripturi, req->URI);
+        strcpy(env_querystr, "QUERY_STRING="); if (strcmp(req->method, "GET") == 0) strcat(env_querystr, req->body);
+        strcpy(env_accept, "HTTP_ACCEPT="); strcat(env_accept, req->accept);
+
+        char *env[] = {p, env_method, env_cookie, env_scriptpath, env_accept, env_querystr};
+        char *args[] = {interpreter, p, NULL};
+
         //NULL terminate body (only happens during GET with param requests), if request is POST, that means no body_len was returned
-        if (req.body_len) req.body[req.body_len] = 0;
-        
+        if (req->body_len) req->body[req->body_len] = 0;
+
         int ret_code;
-        char *data = system_output(args, &sz, &ret_code, 20000); //20s timeout on backend script
+        char *data = system_output(args, env, req->body, req->body_len, &sz, &ret_code, 20000); //20s timeout on backend script
         if (ret_code < 0) { //if there's error in backend script, send err500 and skip sending returned data
+            fprintf(stderr, "Internal error!"); fflush(stderr);
+            http_send_error(client_fd, 500, conn_SSL);
+            goto cleanup_data;
+        }
+
+        get_mime_type(mime_type, req->URI); //MIME type for response header
+        sprintf(content_len, "%ld\n", sz); //content-length for response header - equivalent to itoa(content_len)
+
+        //At this point, data contains both header and body
+        //generate header based on data returned from interpreter program
+        if (generate_header(header, data, mime_type, content_len) < 0) {
             http_send_error(client_fd, 500, conn_SSL);
             goto cleanup_data;
         }
         
-        get_mime_type(mime_type, req.URI); //MIME type for response header
-        sprintf(content_len, "%ld\n", sz); //content-length for response header - equivalent to itoa(content_len)
-
-        //generate header based on data returned from interpreter program
-        generate_header(header, data, mime_type, content_len);
 
         //determine where the body is in returned data and send it to client
         char *doc;
@@ -280,8 +315,11 @@ void *conn_handler(void *vargs)
             doc = strstr(data, "\r\n\r\n");
             if (doc != NULL) break;
             doc = strstr(data, "\n\n");
+            if (doc != NULL) break;
+            doc = data; //last resort: backend did not generate a header
             break;
         }
+
         if (doc) {
             //begin sending data via TCP
             if (is_ssl) {
@@ -292,13 +330,13 @@ void *conn_handler(void *vargs)
                 send_data(client_fd, header, strlen(header)); //send header
                 send_data(client_fd, doc, sz - (doc - data)); //send document
             }
-            
         }
+
         cleanup_data:
         free(data);
     }
     else if(is_interpretable == 0) { //CASE 2: uri is a static page
-        get_mime_type(mime_type, req.URI); //MIME type for response header
+        get_mime_type(mime_type, req->URI); //MIME type for response header
 
         sz = file_get_size(local_uri);
         sprintf(content_len, "%ld", sz);
@@ -341,7 +379,7 @@ void *conn_handler(void *vargs)
 //body includes everything that backend script prints out, not just html content
 //*header is the processed output
 //*body is IMMUTABLE, do not attempt to modify it
-int generate_header(char *header, const char *body, char *mime_type, char *content_len)
+int generate_header(char *header, char *body, char *mime_type, char *content_len)
 {
     char buf[1024] = "";
     char user_defined_header[1024] = "";
@@ -350,23 +388,22 @@ int generate_header(char *header, const char *body, char *mime_type, char *conte
     char *n; //this will store linebreak char
 
     doc_begin = strstr(body, "\n<html");
-    if (doc_begin == NULL) return -1; //invalid html response, callee will throw 500
+    if (doc_begin == NULL) doc_begin = body; //send whatever backend prints to client anyway, alternatively return -1
+
     strncpy(buf, body, doc_begin - body);
     lowercase(user_defined_header, buf, doc_begin - body);
 
-    //printf("%d %s\n--\n", doc_begin - body, user_defined_header);
-    //fflush(stdout);
 
     strncpy(header, user_defined_header, sizeof(user_defined_header));
-    
+
     //define content-type if back-end does not
     char *cont_type = strstr(user_defined_header, "content-type: ");
     if (!cont_type) {
         str_insert(header, 0, "content-type: ");
         str_insert(header, 14,mime_type); //based on known MIME types
-        str_insert(header, strlen("content-type: ") + strlen(mime_type) ," ;charset=utf-8\n");
-    }
-    
+        str_insert(header, strlen("content-type: ") + strlen(mime_type) ,"; charset=utf-8\n");
+    } 
+
     //define HTTP version if back-end doesn't specify
     char *httpver = strstr(user_defined_header, "http/");
     if (httpver && httpver - user_defined_header < 4) { //take into account unnecessary linefeeds from backend retards
@@ -380,13 +417,13 @@ int generate_header(char *header, const char *body, char *mime_type, char *conte
         str_insert(header, 0, "HTTP/1.1 200 OK\n"); //default HTTP code
     }
 
-
     //add content-length to header
     strip_trailing_lf(header, 2);
-
+    
     strcat(header, "\ncontent-length: ");
     strcat(header, content_len);
     strcat(header, "server: mini-http-server\r\n\r\n");
+
 
     return 0;
 }
@@ -424,13 +461,13 @@ void serve_static_content(int client_fd, char *local_uri, long content_len, SSL 
 {
     int bytes_read = 0; //bytes read from local resource
     char response[4096]; //buffer
-    int content_fd = open(local_uri, O_RDONLY); //get requested file content
+    FILE *content_fd = fopen(local_uri, "r"); //get requested file content
     int bytes_written = 0; //bytes sent to remote client
     bytes_read = 0;
 
     while (bytes_written < content_len) {
         memset(response, 0, sizeof(response));
-        bytes_read = read(content_fd, response, sizeof(response)); //content body
+        bytes_read = fread(response, 1, sizeof(response), content_fd); //content body
         if (conn_SSL) {
             bytes_written += send_data_ssl(conn_SSL, response, bytes_read);
         }
@@ -440,7 +477,7 @@ void serve_static_content(int client_fd, char *local_uri, long content_len, SSL 
         if (bytes_written < 0) break; //error occurred, close fd and clean up;
     }
 
-    close(content_fd);
+    fclose(content_fd);
 }
 
 

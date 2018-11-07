@@ -6,7 +6,7 @@ void get_mime_type(char *out, char *uri)
 {
     static char *mime_types[][2] = {{".html", "text/html"}, {".css", "text/css"},
     {".htm", "text/html"}, {".xhtml", "application/xhtml+xml"},
-    {".txt", "text/plain"}, {".py", "text/html"},
+    {".txt", "text/plain"}, {".py", "text/html"}, {".cgi", "text/html"},
     {".jpg", "image/jpeg"}, {".jpeg", "image/jpeg"}, {".png", "image/png"}, {".bmp", "image/bmp"}, {".gif", "image/gif"},
     {".ico", "image/x-icon"}, {".svg", "image/svg+xml"},
     {".oga", "audio/ogg"}, {".wav", "audio/wav"}, {".mp3", "audio/mpeg"},

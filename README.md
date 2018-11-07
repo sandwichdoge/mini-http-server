@@ -3,7 +3,7 @@ Minimal HTTP server in C with SSL and backend scripting support.
 
 
 # Compile
-- Requirements: OpenSSL, OpenSSL-dev
+Requirements: OpenSSL, OpenSSL-dev
 ```
 make
 make config #generate http.conf file
@@ -11,7 +11,8 @@ make ssl-ca #if you want a new keypair for https
 make clean
 ```
 
-# Configure: Edit 'http.conf' file.
+# Configure
+Edit 'http.conf' file.
 
 # Run
 ```

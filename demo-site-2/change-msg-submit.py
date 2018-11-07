@@ -1,6 +1,6 @@
 #!/bin/python2
 
-#import cgi, cgitb
+import cgi, cgitb
 import sys
 
 def get_field_value(raw, field_name):
@@ -16,20 +16,21 @@ def get_field_value(raw, field_name):
     return ret
 
 
-'''
-#form = cgi.FieldStorage()
+form = cgi.FieldStorage()
 
 msg = form.getvalue('msg')
 f = open('msg.txt', 'w')
 f.write(msg)
 f.close()
-'''
 
+
+'''
 raw = sys.argv[3] #request body
 msg = get_field_value(raw, 'msg')
 f = open('msg.txt', 'w+')
 f.write(msg)
 f.close()
+'''
 
 print "HTTP/1.1 307 TEMPORARY REDIRECT"
 print 'Location: /index.py'
