@@ -189,6 +189,7 @@ void *conn_handler(void *vargs)
      *finally pass it it down to process_request() to get info about it (uri, method, body data)
      *if buf[sizeof(buf)] != 0, there's still more data*/
     int n = 0;
+    int c = 5; //counter to handle SSL_ERROR_WANT_READ, after 5 retries terminate conn and clean up
     request = malloc(1); //request points to new data, must be freed during cleanup
     do {
         if (is_ssl) { //https
@@ -198,10 +199,19 @@ void *conn_handler(void *vargs)
             n = read_data(client_fd, buf, sizeof(buf));
         }
         if (n < 0) {
-            fprintf(stderr, "Error reading data from client. fd: %d.\n", client_fd);
-            goto cleanup;
+            ssl_err = SSL_get_error(conn_SSL, n);
+            switch (ssl_err) {
+                case SSL_ERROR_WANT_READ:
+                    //More data from client to read
+                    usleep(1000000);
+                    if (c-- == 0) goto cleanup;
+                    continue;
+                default:
+                    fprintf(stderr, "Error %d reading data from client. fd: %d.\n", ssl_err, client_fd);
+                    goto cleanup;
+            }
         }
-        
+
         if (n > 0) {
             bytes_read += n;
             _new_request = (char*)realloc(request, bytes_read + 1);
@@ -219,7 +229,6 @@ void *conn_handler(void *vargs)
         fprintf(stdin, "Received empty request.\n"); fflush(stdin);
         goto cleanup; //received empty request
     }
-
 
     /*PROCESS HEADER FROM CLIENT*/
     struct http_request *req = process_request(request);
@@ -266,25 +275,24 @@ void *conn_handler(void *vargs)
          *REQUEST_METHOD, CONTENT_TYPE (file upload), CONTENT_LENGTH, HTTP_COOKIE, PATH_INFO, QUERY_STRING (get w params),
          *SCRIPT_FILENAME
          */
+        
         char *env_method = malloc(strlen("REQUEST_METHOD=") + strlen(req->method) + 1);
         char *env_cookie = malloc(strlen("HTTP_COOKIE=") + strlen(req->cookie) + 1);
         char *env_scriptpath = malloc(strlen("SCRIPT_FILENAME=") + strlen(p) + 1);
-        char *env_scripturi = malloc(strlen("SCRIPT_URI") + strlen(req->URI) + 1);
+        char *env_scripturi = malloc(strlen("SCRIPT_URI=") + strlen(req->URI) + 1);
         char *env_accept = malloc(strlen("HTTP_ACCEPT=") + strlen(req->accept) + 1);
-        char *env_querystr;
-        if (strcmp(req->method, "GET") == 0) 
-            env_querystr = malloc(strlen("QUERY_STRING=") + strlen(req->body) + 1);
-        else
-            env_querystr = calloc(strlen("QUERY_STRING=") + 1, 1);
+        char *env_querystr = malloc(strlen("QUERY_STRING=") + (req->query_str ? strlen(req->query_str) + 1 : 1));
 
         strcpy(env_method, "REQUEST_METHOD="); strcat(env_method, req->method);
         strcpy(env_cookie, "HTTP_COOKIE="); strcat(env_cookie, req->cookie);
         strcpy(env_scriptpath, "SCRIPT_FILENAME="); strcat(env_scriptpath, p);
         strcpy(env_scripturi, "SCRIPT_URI="); strcat(env_scripturi, req->URI);
-        strcpy(env_querystr, "QUERY_STRING="); if (strcmp(req->method, "GET") == 0) strcat(env_querystr, req->body);
+        strcpy(env_querystr, "QUERY_STRING="); if (req->query_str) strcat(env_querystr, req->query_str);
         strcpy(env_accept, "HTTP_ACCEPT="); strcat(env_accept, req->accept);
 
-        char *env[] = {p, env_method, env_cookie, env_scriptpath, env_accept, env_querystr};
+        //printf("URI:[%s]- query:[%s]\n", req->URI, env_querystr);
+
+        char *env[] = {p, env_method, env_cookie, env_scriptpath, env_accept, env_querystr, NULL};
         char *args[] = {interpreter, p, NULL};
 
         //NULL terminate body (only happens during GET with param requests), if request is POST, that means no body_len was returned
@@ -334,6 +342,7 @@ void *conn_handler(void *vargs)
 
         cleanup_data:
         free(data);
+        free(req);
     }
     else if(is_interpretable == 0) { //CASE 2: uri is a static page
         get_mime_type(mime_type, req->URI); //MIME type for response header
@@ -359,16 +368,15 @@ void *conn_handler(void *vargs)
     }
     
     cleanup:
+    //shutdown connection and free resources
     if (is_ssl) {
         int saved_flock = fcntl(client_fd, F_GETFL);
         fcntl(client_fd, F_SETFL, saved_flock & ~O_NONBLOCK);
     }
-    //shutdown connection and free resources
     if (!ssl_err) free(request); //free() shouldn't do anything if pointer is NULL, but in multithreading it's funky, so check jic
     if (is_ssl && conn_SSL != NULL) disconnect_SSL(conn_SSL, ssl_err); //will call additional SSL_free() if there's error (ssl_err != 0)
     sock_cleanup(client_fd);
-    printf("Cleaned up.\n"); fflush(stdout);
-    
+    //printf("Cleaned up.\n"); fflush(stdout);
     }
 
     return NULL;

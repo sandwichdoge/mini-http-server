@@ -9,13 +9,13 @@ struct http_request *process_request(char *request)
     int uri_len = 0;
     int is_GET_with_params = 0;
     char *n; //this will contain linebreak char
-
     /*HEADER SECTION*/
     memset(ret->URI, 0, sizeof(ret->URI));
     memset(ret->method, 0, sizeof(ret->method));
     memset(ret->httpver, 0, sizeof(ret->httpver));
     memset(ret->conn_type, 0, sizeof(ret->conn_type));
     memset(ret->cookie, 0, sizeof(ret->cookie));
+    ret->query_str = NULL;
     ret->body_len = 0;
 
     //method; method_len = len of method string
@@ -27,18 +27,19 @@ struct http_request *process_request(char *request)
     char *URI = strchr(request, ' ');
     char *URI_end = NULL;
     if (URI) {
-        URI_end = strchrln(URI + 1, '?');
+        URI++;
+        URI_end = strchrln(URI, '?');
         if (URI_end) { //somebody tries to send a form with GET method
             //handle it anyway?
             is_GET_with_params = 1;
         }
         else {
-            URI_end = strchr(URI + 1, ' ');
+            URI_end = strchr(URI, ' ');
         }
     }
     if (URI && URI_end) {
-        uri_len = URI_end - URI - 1;
-        memcpy(ret->URI, URI + 1, uri_len);
+        uri_len = URI_end - URI;
+        memcpy(ret->URI, URI, uri_len);
     }
     else {
         strcpy(ret->URI, "/");
@@ -95,20 +96,21 @@ struct http_request *process_request(char *request)
 
     /*BODY SECTION*/
     char *body;
-    if (is_GET_with_params) { //handle GET form submit.py?age=18
-        ret->body = URI_end + 1; //point body to end of local resource path (submit.py?), URI_end points to '?' in this case
-        request[URI + uri_len - request] = 0; //terminate the part after uri (submit.py?age=18NULL)
-        ret->body_len = strchr(ret->body, ' ') - (ret->body); //URI_end+1 is start of argument fields
+    if (is_GET_with_params) { //handle GET form submit.py?age=18        
+        ret->query_str = URI + uri_len + 1;
+        char *qstr_end = strchrln(ret->query_str, ' ');
+        if (qstr_end) ret->query_str[qstr_end - ret->query_str] = '\0';
+        ret->body_len = 0;
     }
     else {
         body = strstr(request, "\r\n\r\n");
         if (body) {
             body += 4; //strip preceding blank line
             ret->body = body;
-            //ret->body_len = strlen(body);
+            ret->body_len = strlen(body);
         }
     }
-    
+
     return ret;
 }
 

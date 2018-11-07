@@ -70,7 +70,7 @@ char* system_output(char **args, char **env, char *input_data, long input_sz, lo
         char *output = malloc(1);
         fcntl(fds[0], F_SETFL, O_NONBLOCK); /*non-blocking IO, https://stackoverflow.com/questions/8130922/processes-hang-on-read
                                                                 since read() will hang when reading from empty pipe if this option is not set*/
-        write(fds_in[0], input_data, input_sz);
+        if (input_data) write(fds_in[0], input_data, input_sz);
         while (1) {
             pid_s = waitpid(pid, &ret_code, WNOHANG);
             if (pid_s > 0) brkflag = 1; //child exited, read from buf 1 last time then break
