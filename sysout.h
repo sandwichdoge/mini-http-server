@@ -50,11 +50,13 @@ char* system_output(char **args, char **env, char *input_data, long input_sz, lo
                                     //stdout is alias of fd1
         dup2(fds[1], STDERR_FILENO);  //point stderr to fd1 as well
         close(fds[1]);  //pipe is now fd0<->stdout, we can now close fd1
+        close(fds[0]);
 
-        dup2(fds_in[1], STDIN_FILENO); //fd_in0<->stdin, 1 process writes to fd_in0, other processl reads from stdin
         close(fds_in[1]);
+        dup2(fds_in[0], STDIN_FILENO); //fd_in0<->stdin, 1 process writes to fd_in0, other process reads from stdin
+        close(fds_in[0]);
 
-        _semsignal(sem); //synchronization, remove non-derministic nature of this concurrency
+        _semsignal(sem); //bsemaphore synchronization, remove non-derministic nature of this concurrency
 
         execve(args[0], args, env); //child process will now be cannibalized
     }
@@ -68,9 +70,12 @@ char* system_output(char **args, char **env, char *input_data, long input_sz, lo
         int brkflag = 0; //if flag is 1 when in loop, read buffer 1 last time then break
         pid_t pid_s;
         char *output = malloc(1);
+        close(fds_in[0]);
         fcntl(fds[0], F_SETFL, O_NONBLOCK); /*non-blocking IO, https://stackoverflow.com/questions/8130922/processes-hang-on-read
                                                                 since read() will hang when reading from empty pipe if this option is not set*/
-        if (input_data) write(fds_in[0], input_data, input_sz);
+        if (input_data) write(fds_in[1], input_data, input_sz);
+        close(fds_in[1]);
+
         while (1) {
             pid_s = waitpid(pid, &ret_code, WNOHANG);
             if (pid_s > 0) brkflag = 1; //child exited, read from buf 1 last time then break
