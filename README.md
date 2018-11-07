@@ -3,7 +3,7 @@ Minimal HTTP server in C with SSL and backend scripting support.
 
 
 # Compile
-Requirements: OpenSSL, OpenSSL-dev
+- Requirements: OpenSSL, OpenSSL-dev
 ```
 make
 make config #generate http.conf file
@@ -12,7 +12,7 @@ make clean
 ```
 
 # Configure
-Edit 'http.conf' file.
+- Edit 'http.conf' file.
 
 # Run
 ```
