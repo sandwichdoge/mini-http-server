@@ -301,7 +301,7 @@ void *conn_handler(void *vargs)
         int ret_code;
         char *data = system_output(args, env, req->body, req->body_len, &sz, &ret_code, 20000); //20s timeout on backend script
         if (ret_code < 0) { //if there's error in backend script, send err500 and skip sending returned data
-            fprintf(stderr, "Internal error!"); fflush(stderr);
+            fprintf(stderr, "Internal error, code %d!", ret_code); fflush(stderr);
             http_send_error(client_fd, 500, conn_SSL);
             goto cleanup_data;
         }
