@@ -236,7 +236,6 @@ void *conn_handler(void *vargs)
             request = _new_request;
             memcpy(request + bytes_read - n, buf, n); //append data from tcp stream to *request
         }
-        printf("read:%d\n", bytes_read);
 
         if (bytes_read >= MAX_REQUEST_LEN) {
             fprintf(stderr, "Request exceeds 20MB limit.\n");
@@ -260,6 +259,7 @@ void *conn_handler(void *vargs)
     printf("conn len:%s\n", req->conn_len);
     long total_read = req->body_len;
     long total_len = atoi(req->conn_len);
+    fcntl(client_fd, F_SETFL, O_NONBLOCK);
     while (total_read < total_len) {
         memset(buf, 0, sizeof(buf));
         if (is_ssl) { //https
@@ -268,10 +268,17 @@ void *conn_handler(void *vargs)
         else { //regular http without ssl
             n = read_data(client_fd, buf, sizeof(buf));
         }
-        if (n <= 0) break;
+        //printf("%s\n", buf);
+        if (n <= 0) {
+            printf("n %d\n", n);
+            perror("Error reading data.");
+            break;
+        }
         total_read += n;
     }
-    printf("final:%d\n", total_read);*/
+    int saved_flock = fcntl(client_fd, F_GETFL);
+    fcntl(client_fd, F_SETFL, saved_flock & ~O_NONBLOCK);
+    printf("final:%d\n", total_read); fflush(stdout);*/
 
     //Process URI (decode url, check privileges or if file exists)
     if (strcmp(req->URI, "/") == 0) strcpy(req->URI, HOMEPAGE); //when URI is "/", e.g. GET / HTTP/1.1
@@ -335,18 +342,7 @@ void *conn_handler(void *vargs)
             goto cleanup_data;
         }
 
-        get_mime_type(mime_type, req->URI); //MIME type for response header
-        sprintf(content_len, "%ld\n", sz); //content-length for response header - equivalent to itoa(content_len)
-
-        //At this point, data contains both header and body
-        //generate header based on data returned from interpreter program
-        if (generate_header(header, data, mime_type, content_len) < 0) {
-            http_send_error(client_fd, 500, conn_SSL);
-            goto cleanup_data;
-        }
-        
-
-        //determine where the body is in returned data and send it to client
+        //trim header parts
         char *doc;
         while (1) {
             doc = strstr(data, "\r\n\r\n");
@@ -356,6 +352,17 @@ void *conn_handler(void *vargs)
             doc = data; //last resort: backend did not generate a header
             break;
         }
+
+        get_mime_type(mime_type, req->URI); //MIME type for response header
+        sprintf(content_len, "%ld\n", sz - (doc - data)); //content-length for response header - equivalent to itoa(content_len)
+
+        //At this point, data contains both header and body
+        //generate header based on data returned from interpreter program
+        if (generate_header(header, data, mime_type, content_len) < 0) {
+            http_send_error(client_fd, 500, conn_SSL);
+            goto cleanup_data;
+        }
+        
 
         if (doc) {
             //begin sending data via TCP
