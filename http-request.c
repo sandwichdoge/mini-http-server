@@ -80,6 +80,16 @@ struct http_request *process_request(char *request)
         strcpy(ret->conn_type, "close");
     }
 
+    //Content Length
+    char *conn_len;
+    conn_len = strstr(URI + uri_len, "Content-Length: ");
+    if (conn_len) {
+        strncpy(ret->conn_len, conn_len + strlen("Content-Length: "), strchr(conn_len, '\n') - conn_len - strlen("Content-Length: "));
+    }
+    else {
+        strcpy(ret->conn_len, "0");
+    }
+
     //Cookie
     char *cookie = strstr(request, "Cookie: "); 
     if (cookie) {

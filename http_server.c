@@ -33,19 +33,32 @@
  *ssl_accept() to wait for client to initiate handshake, non-block I/O client_fd to implement timeout otherwise it'll hang on bad requests
  */
 
-void *conn_handler(void *fd);
-void serve_static_content(int client_fd, char *local_uri, long content_len, SSL *conn_SSL);
-void http_send_error(int client_fd, int errcode, SSL *conn_SSL);
-int is_valid_method(char *method);
-int load_global_config();
-int generate_header(char *header, char *body, char *mime_type, char *content_len);
-int generate_header_static(char *header, char *mime_type, char *content_len);
-
 
 typedef struct client_info {
     int is_ssl;
     struct server_socket server_socket;
 } client_info;
+
+
+typedef struct env_vars_t {
+    char *env_method;
+    char *env_cookie;
+    char *env_scriptpath;
+    char *env_scripturi;
+    char *env_accept;
+    char *env_querystr;
+} env_vars_t;
+
+
+void *conn_handler(void *fd);
+void serve_static_content(int client_fd, char *local_uri, long content_len, SSL *conn_SSL);
+void http_send_error(int client_fd, int errcode, SSL *conn_SSL);
+int is_valid_method(char *method);
+int env_vars_init(env_vars_t *env, struct http_request *req);
+int env_vars_free(env_vars_t *env);
+int load_global_config();
+int generate_header(char *header, char *body, char *mime_type, char *content_len);
+int generate_header_static(char *header, char *mime_type, char *content_len);
 
 
 char SITEPATH[1024] = ""; //physical path of website on disk
@@ -156,7 +169,7 @@ void *conn_handler(void *vargs)
     memset(content_len, 0, sizeof(content_len));
 
     client_fd = accept(server_socket.fd, (struct sockaddr*)server_socket.handle, &server_socket.len);
-    //printf("Connection established, fd:%d, thread:%d\n", client_fd, pthread_self()); fflush(stdout);
+    printf("Connection established, fd:%d, thread:%d\n", client_fd, pthread_self()); fflush(stdout);
 
     /*INITIALIZE SSL CONNECTION IF CONNECTED VIA HTTPS*/
     if (is_ssl) {
@@ -203,7 +216,7 @@ void *conn_handler(void *vargs)
             switch (ssl_err) {
                 case SSL_ERROR_WANT_READ:
                     //More data from client to read
-                    usleep(1000000);
+                    usleep(100000);
                     if (c-- == 0) goto cleanup;
                     continue;
                 default:
@@ -222,9 +235,14 @@ void *conn_handler(void *vargs)
             request = _new_request;
             memcpy(request + bytes_read - n, buf, n); //append data from tcp stream to *request
         }
-        
-    } while (buf[sizeof(buf)] != 0 && bytes_read < MAX_REQUEST_LEN); //stop if request is larger than 20MB or reached NULL
+        printf("read:%d\n", bytes_read);
 
+        if (bytes_read >= MAX_REQUEST_LEN) {
+            fprintf(stderr, "Request exceeds 20MB limit.\n");
+            break;
+        }
+    } while (buf[sizeof(buf)] != 0); //stop if request is larger than 20MB or reached NULL
+    
     if (bytes_read == 0) {
         fprintf(stdin, "Received empty request.\n"); fflush(stdin);
         goto cleanup; //received empty request
@@ -233,6 +251,26 @@ void *conn_handler(void *vargs)
     /*PROCESS HEADER FROM CLIENT*/
     struct http_request *req = process_request(request);
 
+    /*
+    //New feature- multipart file uploads
+    //IF total data read < Content-Length, keep reading
+    //TODO: properly split boundary from request header
+    printf("full body:%s\n", req->body);
+    printf("conn len:%s\n", req->conn_len);
+    long total_read = req->body_len;
+    int total_len = atoi(req->conn_len);
+    while (total_read < total_len) {
+        memset(buf, 0, sizeof(buf));
+        if (is_ssl) { //https
+            n = read_data_ssl(conn_SSL, buf, sizeof(buf));
+        }
+        else { //regular http without ssl
+            n = read_data(client_fd, buf, sizeof(buf));
+        }
+        if (n <= 0) break;
+        total_read += n;
+    }
+    printf("final:%d\n", total_read);*/
 
     //Process URI (decode url, check privileges or if file exists)
     if (strcmp(req->URI, "/") == 0) strcpy(req->URI, HOMEPAGE); //when URI is "/", e.g. GET / HTTP/1.1
@@ -271,35 +309,25 @@ void *conn_handler(void *vargs)
         /*call interpreter, pass request body as argument*/
         char *p = local_uri;
     
-        /*handle env variables here
-         *REQUEST_METHOD, CONTENT_TYPE (file upload), CONTENT_LENGTH, HTTP_COOKIE, PATH_INFO, QUERY_STRING (get w params),
-         *SCRIPT_FILENAME
-         */
-        
-        char *env_method = malloc(strlen("REQUEST_METHOD=") + strlen(req->method) + 1);
-        char *env_cookie = malloc(strlen("HTTP_COOKIE=") + strlen(req->cookie) + 1);
-        char *env_scriptpath = malloc(strlen("SCRIPT_FILENAME=") + strlen(p) + 1);
-        char *env_scripturi = malloc(strlen("SCRIPT_URI=") + strlen(req->URI) + 1);
-        char *env_accept = malloc(strlen("HTTP_ACCEPT=") + strlen(req->accept) + 1);
-        char *env_querystr = malloc(strlen("QUERY_STRING=") + (req->query_str ? strlen(req->query_str) + 1 : 1));
-
-        strcpy(env_method, "REQUEST_METHOD="); strcat(env_method, req->method);
-        strcpy(env_cookie, "HTTP_COOKIE="); strcat(env_cookie, req->cookie);
-        strcpy(env_scriptpath, "SCRIPT_FILENAME="); strcat(env_scriptpath, p);
-        strcpy(env_scripturi, "SCRIPT_URI="); strcat(env_scripturi, req->URI);
-        strcpy(env_querystr, "QUERY_STRING="); if (req->query_str) strcat(env_querystr, req->query_str);
-        strcpy(env_accept, "HTTP_ACCEPT="); strcat(env_accept, req->accept);
-
-        //printf("URI:[%s]- query:[%s]\n", req->URI, env_querystr);
-
-        char *env[] = {p, env_method, env_cookie, env_scriptpath, env_accept, env_querystr, NULL};
-        char *args[] = {interpreter, p, NULL};
-
         //NULL terminate body (only happens during GET with param requests), if request is POST, that means no body_len was returned
         if (req->body_len) req->body[req->body_len] = 0;
 
+        /*handle env variables here
+         *REQUEST_METHOD, CONTENT_TYPE (file upload), CONTENT_LENGTH, HTTP_COOKIE, PATH_INFO, QUERY_STRING (get w params),
+         *SCRIPT_FILENAME*/
+        
+        env_vars_t e;
+        env_vars_init(&e, req);
+
+        char *env[] = {p, e.env_method, e.env_cookie, e.env_scriptpath, e.env_accept, e.env_querystr, NULL};
+        char *args[] = {interpreter, p, NULL};
+
+
         int ret_code;
         char *data = system_output(args, env, req->body, req->body_len, &sz, &ret_code, 20000); //20s timeout on backend script
+
+        env_vars_free(&e);
+
         if (ret_code < 0) { //if there's error in backend script, send err500 and skip sending returned data
             fprintf(stderr, "Internal error, code %d!", ret_code); fflush(stderr);
             http_send_error(client_fd, 500, conn_SSL);
@@ -597,3 +625,48 @@ int load_global_config()
 
     return 0;
 }
+
+
+/*Initialize a struct to pass to interpreter's environment variables*/
+int env_vars_init(env_vars_t *env, struct http_request *req)
+{
+    char *env_method = malloc(strlen("REQUEST_METHOD=") + strlen(req->method) + 1);
+    char *env_cookie = malloc(strlen("HTTP_COOKIE=") + strlen(req->cookie) + 1);
+    char *env_scriptpath = malloc(strlen("SCRIPT_FILENAME=") + strlen(req->URI) + 1);
+    char *env_scripturi = malloc(strlen("SCRIPT_URI=") + strlen(req->URI) + 1);
+    char *env_accept = malloc(strlen("HTTP_ACCEPT=") + strlen(req->accept) + 1);
+    char *env_querystr = malloc(strlen("QUERY_STRING=") + (req->query_str ? strlen(req->query_str) + 1 : 1));
+    //char *env_conlen = malloc(strlen("CONTENT_LENGTH=") + itoa(strlen(req->body_len) + 1);
+
+    strcpy(env_method, "REQUEST_METHOD="); strcat(env_method, req->method);
+    strcpy(env_cookie, "HTTP_COOKIE="); strcat(env_cookie, req->cookie);
+    strcpy(env_scriptpath, "SCRIPT_FILENAME="); strcat(env_scriptpath, req->URI);
+    strcpy(env_scripturi, "SCRIPT_URI="); strcat(env_scripturi, req->URI);
+    strcpy(env_querystr, "QUERY_STRING="); if (req->query_str) strcat(env_querystr, req->query_str);
+    strcpy(env_accept, "HTTP_ACCEPT="); strcat(env_accept, req->accept);
+    //strcpy(env_conlen, "CONTENT_LENGTH="); strcat(env_conlen, itoa(req->body_len);
+
+    env->env_method = env_method;
+    env->env_cookie = env_cookie;
+    env->env_scriptpath = env_scriptpath;
+    env->env_scripturi = env_scripturi;
+    env->env_accept = env_accept;
+    env->env_querystr = env_querystr;
+
+    return 0;    
+}
+
+
+/*Free up env variables*/
+int env_vars_free(env_vars_t *env)
+{
+    free(env->env_accept);
+    free(env->env_cookie);
+    free(env->env_method);
+    free(env->env_querystr);
+    free(env->env_scriptpath);
+    free(env->env_querystr);
+
+    return 0;
+}
+
