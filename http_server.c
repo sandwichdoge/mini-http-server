@@ -47,6 +47,7 @@ typedef struct env_vars_t {
     char *env_scripturi;
     char *env_accept;
     char *env_querystr;
+    char *env_conn_len;
 } env_vars_t;
 
 
@@ -636,7 +637,7 @@ int env_vars_init(env_vars_t *env, struct http_request *req)
     char *env_scripturi = malloc(strlen("SCRIPT_URI=") + strlen(req->URI) + 1);
     char *env_accept = malloc(strlen("HTTP_ACCEPT=") + strlen(req->accept) + 1);
     char *env_querystr = malloc(strlen("QUERY_STRING=") + (req->query_str ? strlen(req->query_str) + 1 : 1));
-    //char *env_conlen = malloc(strlen("CONTENT_LENGTH=") + itoa(strlen(req->body_len) + 1);
+    char *env_conlen = malloc(strlen("CONTENT_LENGTH=") + req->conn_len);
 
     strcpy(env_method, "REQUEST_METHOD="); strcat(env_method, req->method);
     strcpy(env_cookie, "HTTP_COOKIE="); strcat(env_cookie, req->cookie);
@@ -644,7 +645,7 @@ int env_vars_init(env_vars_t *env, struct http_request *req)
     strcpy(env_scripturi, "SCRIPT_URI="); strcat(env_scripturi, req->URI);
     strcpy(env_querystr, "QUERY_STRING="); if (req->query_str) strcat(env_querystr, req->query_str);
     strcpy(env_accept, "HTTP_ACCEPT="); strcat(env_accept, req->accept);
-    //strcpy(env_conlen, "CONTENT_LENGTH="); strcat(env_conlen, itoa(req->body_len);
+    strcpy(env_conlen, "CONTENT_LENGTH="); strcat(env_conlen, req->conn_len);
 
     env->env_method = env_method;
     env->env_cookie = env_cookie;
@@ -652,6 +653,7 @@ int env_vars_init(env_vars_t *env, struct http_request *req)
     env->env_scripturi = env_scripturi;
     env->env_accept = env_accept;
     env->env_querystr = env_querystr;
+    env->env_conn_len = env_conlen;
 
     return 0;    
 }
@@ -666,6 +668,7 @@ int env_vars_free(env_vars_t *env)
     free(env->env_querystr);
     free(env->env_scriptpath);
     free(env->env_querystr);
+    free(env->env_conn_len);
 
     return 0;
 }
