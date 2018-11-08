@@ -259,7 +259,7 @@ void *conn_handler(void *vargs)
     printf("full body:%s\n", req->body);
     printf("conn len:%s\n", req->conn_len);
     long total_read = req->body_len;
-    int total_len = atoi(req->conn_len);
+    long total_len = atoi(req->conn_len);
     while (total_read < total_len) {
         memset(buf, 0, sizeof(buf));
         if (is_ssl) { //https
@@ -637,7 +637,7 @@ int env_vars_init(env_vars_t *env, struct http_request *req)
     char *env_scripturi = malloc(strlen("SCRIPT_URI=") + strlen(req->URI) + 1);
     char *env_accept = malloc(strlen("HTTP_ACCEPT=") + strlen(req->accept) + 1);
     char *env_querystr = malloc(strlen("QUERY_STRING=") + (req->query_str ? strlen(req->query_str) + 1 : 1));
-    char *env_conlen = malloc(strlen("CONTENT_LENGTH=") + req->conn_len);
+    char *env_conlen = malloc(strlen("CONTENT_LENGTH=") + strlen(req->conn_len));
 
     strcpy(env_method, "REQUEST_METHOD="); strcat(env_method, req->method);
     strcpy(env_cookie, "HTTP_COOKIE="); strcat(env_cookie, req->cookie);
