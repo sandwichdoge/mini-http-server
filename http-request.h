@@ -11,6 +11,7 @@ struct http_request {
     char accept[128];
     char httpver[16];
     char conn_type[16];
+    char conn_len[16];
     char *query_str;
     char *body;
     long body_len;
