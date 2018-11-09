@@ -277,7 +277,7 @@ void *conn_handler(void *vargs)
         FD_ZERO(&client_fd_monitor);
         FD_SET(client_fd, &client_fd_monitor);
         struct timeval tv; //timeout struct
-        tv.tv_usec = 5000000;
+        tv.tv_usec = 500000;
 
         while (total_read < total_len) {
             memset(buf, 0, sizeof(buf));
