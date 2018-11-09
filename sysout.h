@@ -43,6 +43,7 @@ char* system_output(char **args, char **env, char *input_data, long input_sz, lo
     semctl(sem, 0, SETVAL, 1);
 
     pid_t pid;
+    signal(SIGPIPE, SIG_IGN);
     pid = fork();
     if (pid == 0) {  //is child
         dup2(fds[1], STDOUT_FILENO);  //point stdout to file table entry pointed to by fd1, cause all data written in stdout to be-
@@ -83,7 +84,10 @@ char* system_output(char **args, char **env, char *input_data, long input_sz, lo
             bytes_read_last = read(fds[0], buf, sizeof(buf));
             if (bytes_read_last > 0) {
                 output = realloc(output, bytes_read_total + bytes_read_last + 1);
-                if (output == NULL) break; //out of memory
+                if (output == NULL) {
+                    fprintf(stderr, "OUT OF MEMORY.\n");
+                    break; //out of memory
+                }
                 memcpy(output + bytes_read_total, buf, bytes_read_last); //concatenate new data
                 bytes_read_total += bytes_read_last;
                 memset(buf, 0, sizeof(buf));

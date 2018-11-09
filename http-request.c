@@ -14,7 +14,9 @@ struct http_request *process_request(char *request)
     memset(ret->method, 0, sizeof(ret->method));
     memset(ret->httpver, 0, sizeof(ret->httpver));
     memset(ret->conn_type, 0, sizeof(ret->conn_type));
+    memset(ret->conn_len, 0, sizeof(ret->conn_len));
     memset(ret->cookie, 0, sizeof(ret->cookie));
+    memset(ret->accept, 0, sizeof(ret->accept));
     ret->query_str = NULL;
     ret->body_len = 0;
 

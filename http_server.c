@@ -16,7 +16,7 @@
 #include "casing.h" //uppercase() and lowercase()
 #include "str-utils/str-utils.h"
 
-#define MAX_REQUEST_LEN 20*1000*1024
+#define MAX_REQUEST_LEN 128*1024
 
 //gcc http_server.c serversocket.c http-request.c fileops.c http-mimes.c -lpthread
 
@@ -152,12 +152,14 @@ void *conn_handler(void *vargs)
     char header[1024];
     char content_len[16];
     long sz;
+    char *body_old = NULL;
 
     /*LOOP HERE*/
     while (1) { //these declarations should be optimized by compiler anyway, it's ok to declare within loop
 
     int bytes_read = 0;
     int ssl_err = 0;
+    int is_multipart = 0;
     char *request = NULL;
     char *_new_request;
     SSL *conn_SSL = NULL;
@@ -255,42 +257,55 @@ void *conn_handler(void *vargs)
     
     //New feature- multipart file uploads
     //IF total data read < Content-Length, keep reading
-    //TODO: properly split boundary from request header
-    //PROBLEM: failure if binary data is in 1st request?, missing last segment?
-    //printf("full body:%s\n", req->body);
-    printf("conn len:%s\n", req->conn_len);
+    //TODO: necessary to properly split boundary from request header? or just send everything to backend?
     long total_read = req->body_len;
     long total_len = atoi(req->conn_len);
-    fcntl(client_fd, F_SETFL, O_NONBLOCK);
 
-    fd_set client_fd_monitor;
-    FD_ZERO(&client_fd_monitor);
-    FD_SET(client_fd, &client_fd_monitor);
-    struct timeval tv;
-    tv.tv_usec = 50000;
+    if (total_read < total_len) {
+        printf("CONN_LEN:<%d>, already read:%d\n", total_len, req->body_len);
+        is_multipart = 1;
+        body_old = req->body;
+        req->body = calloc(total_len + 1, 1); //point body to new concatenated body, a hacky C thing
+        memcpy(req->body, body_old, total_read); //concatenate old body to new body
 
-    while (total_read < total_len) {
-        memset(buf, 0, sizeof(buf));
-        if (select(client_fd +1, &client_fd_monitor, NULL, NULL, &tv) < 0) fprintf(stderr, "select() error.\n");
+        /*HANDLE MULTIPART FILE UPLOAD*/
+        //printf("FULLBODY:<%s>\n", req->body);
 
-        if (is_ssl) { //https
-            n = read_data_ssl(conn_SSL, buf, sizeof(buf));
+        fcntl(client_fd, F_SETFL, O_NONBLOCK);
+
+        fd_set client_fd_monitor;
+        FD_ZERO(&client_fd_monitor);
+        FD_SET(client_fd, &client_fd_monitor);
+        struct timeval tv; //timeout struct
+        tv.tv_usec = 5000000;
+
+        while (total_read < total_len) {
+            memset(buf, 0, sizeof(buf));
+            //usleep(200);
+            if (select(client_fd +1, &client_fd_monitor, NULL, NULL, &tv) < 0) fprintf(stderr, "select() error.\n");
+
+            if (is_ssl) { //https
+                n = read_data_ssl(conn_SSL, buf, sizeof(buf));
+            }
+            else { //regular http without ssl
+                n = read_data(client_fd, buf, sizeof(buf));
+            }
+            if (n <= 0) {
+                //perror("Error reading data.");
+                break;
+            }
+
+            memcpy(req->body + total_read, buf, n);
+
+            total_read += n;
         }
-        else { //regular http without ssl
-            n = read_data(client_fd, buf, sizeof(buf));
-        }
-        if (n <= 0) {
-            printf("n %d\n", n);
-            perror("Error reading data.");
-            break;
-        }
+        req->body_len = total_len; //update body len
 
-        total_read += n;
+        int saved_flock = fcntl(client_fd, F_GETFL);
+        fcntl(client_fd, F_SETFL, saved_flock & ~O_NONBLOCK);
+        printf("startlen[%d]\nfinal:[%d]\n", req->body_len, total_read); fflush(stdout);
+
     }
-    int saved_flock = fcntl(client_fd, F_GETFL);
-    fcntl(client_fd, F_SETFL, saved_flock & ~O_NONBLOCK);
-    printf("startlen[%d]\nfinal:[%d]\n", req->body_len, total_read); fflush(stdout);
-
 
     //Process URI (decode url, check privileges or if file exists)
     if (strcmp(req->URI, "/") == 0) strcpy(req->URI, HOMEPAGE); //when URI is "/", e.g. GET / HTTP/1.1
@@ -316,7 +331,7 @@ void *conn_handler(void *vargs)
         goto cleanup;
     }
 
-    //printf("res:%s\n", local_uri); fflush(stdout);
+    printf("res:%s\n", local_uri); fflush(stdout);
     //TODO: cookie, gzip content, handle other methods like PUT, HEAD, DELETE..
     
 
@@ -347,6 +362,7 @@ void *conn_handler(void *vargs)
         char *data = system_output(args, env, req->body, req->body_len, &sz, &ret_code, 20000); //20s timeout on backend script
 
         env_vars_free(&e);
+        if (is_multipart) free(req->body);
 
         if (ret_code < 0) { //if there's error in backend script, send err500 and skip sending returned data
             fprintf(stderr, "Internal error, code %d!", ret_code); fflush(stderr);
@@ -650,13 +666,13 @@ int load_global_config()
 /*Initialize a struct to pass to interpreter's environment variables*/
 int env_vars_init(env_vars_t *env, struct http_request *req)
 {
-    char *env_method = malloc(strlen("REQUEST_METHOD=") + strlen(req->method) + 1);
-    char *env_cookie = malloc(strlen("HTTP_COOKIE=") + strlen(req->cookie) + 1);
-    char *env_scriptpath = malloc(strlen("SCRIPT_FILENAME=") + strlen(req->URI) + 1);
-    char *env_scripturi = malloc(strlen("SCRIPT_URI=") + strlen(req->URI) + 1);
-    char *env_accept = malloc(strlen("HTTP_ACCEPT=") + strlen(req->accept) + 1);
-    char *env_querystr = malloc(strlen("QUERY_STRING=") + (req->query_str ? strlen(req->query_str) + 1 : 1));
-    char *env_conlen = malloc(strlen("CONTENT_LENGTH=") + strlen(req->conn_len));
+    char *env_method = calloc(strlen("REQUEST_METHOD=") + strlen(req->method) + 1, 1);
+    char *env_cookie = calloc(strlen("HTTP_COOKIE=") + strlen(req->cookie) + 1, 1);
+    char *env_scriptpath = calloc(strlen("SCRIPT_FILENAME=") + strlen(req->URI) + 1, 1);
+    char *env_scripturi = calloc(strlen("SCRIPT_URI=") + strlen(req->URI) + 1, 1);
+    char *env_accept = calloc(strlen("HTTP_ACCEPT=") + strlen(req->accept) + 1, 1);
+    char *env_querystr = calloc(strlen("QUERY_STRING=") + (req->query_str ? strlen(req->query_str) + 1 : 1), 1);
+    char *env_conlen = calloc(strlen("CONTENT_LENGTH=") + sizeof(req->conn_len), 1);
 
     strcpy(env_method, "REQUEST_METHOD="); strcat(env_method, req->method);
     strcpy(env_cookie, "HTTP_COOKIE="); strcat(env_cookie, req->cookie);
@@ -681,13 +697,13 @@ int env_vars_init(env_vars_t *env, struct http_request *req)
 /*Free up env variables*/
 int env_vars_free(env_vars_t *env)
 {
-    free(env->env_accept);
-    free(env->env_cookie);
-    free(env->env_method);
-    free(env->env_querystr);
-    free(env->env_scriptpath);
-    free(env->env_querystr);
-    free(env->env_conn_len);
+    free(env->env_accept); env->env_accept = NULL;
+    free(env->env_cookie); env->env_cookie = NULL;
+    free(env->env_method); env->env_method = NULL;
+    free(env->env_querystr); env->env_querystr = NULL;
+    free(env->env_scriptpath); env->env_scriptpath = NULL;
+    free(env->env_querystr); env->env_querystr = NULL;
+    free(env->env_conn_len); env->env_conn_len = NULL;
 
     return 0;
 }
