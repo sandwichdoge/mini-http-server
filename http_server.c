@@ -349,7 +349,7 @@ void *conn_handler(void *vargs)
         env_vars_t e;
         env_vars_init(&e, req);
 
-        char *env[] = {p, e.env_method, e.env_cookie, e.env_scriptpath, e.env_accept, e.env_querystr, NULL};
+        char *env[] = {p, e.env_method, e.env_cookie, e.env_scriptpath, e.env_accept, e.env_querystr, e.env_conn_len, NULL};
         char *args[] = {interpreter, p, NULL};
 
         int ret_code;
@@ -666,7 +666,7 @@ int env_vars_init(env_vars_t *env, struct http_request *req)
     char *env_scripturi = calloc(strlen("SCRIPT_URI=") + strlen(req->URI) + 1, 1);
     char *env_accept = calloc(strlen("HTTP_ACCEPT=") + strlen(req->accept) + 1, 1);
     char *env_querystr = calloc(strlen("QUERY_STRING=") + (req->query_str ? strlen(req->query_str) + 1 : 1), 1);
-    char *env_conlen = calloc(strlen("CONTENT_LENGTH=") + sizeof(req->conn_len), 1);
+    char *env_conlen = calloc(strlen("CONTENT_LENGTH=") + strlen(req->conn_len) + 1, 1);
 
     strcpy(env_method, "REQUEST_METHOD="); strcat(env_method, req->method);
     strcpy(env_cookie, "HTTP_COOKIE="); strcat(env_cookie, req->cookie);
