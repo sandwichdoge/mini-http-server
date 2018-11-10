@@ -354,7 +354,6 @@ void *conn_handler(void *vargs)
 
         int ret_code;
         char *data = system_output(args, env, req->body, req->body_len, &sz, &ret_code, 20000); //20s timeout on backend script
-        printf("%d\n", sz);
         
         env_vars_free(&e);
         if (is_multipart) free(req->body);
