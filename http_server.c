@@ -173,7 +173,7 @@ void *conn_handler(void *vargs)
     memset(content_len, 0, sizeof(content_len));
 
     client_fd = accept(server_socket.fd, (struct sockaddr*)server_socket.handle, &server_socket.len);
-    printf("Connection established, fd:%d, thread:%d\n", client_fd, pthread_self()); fflush(stdout);
+    //printf("Connection established, fd:%d, thread:%d\n", client_fd, pthread_self()); fflush(stdout);
 
     /*INITIALIZE SSL CONNECTION IF CONNECTED VIA HTTPS*/
     if (is_ssl) {
@@ -262,15 +262,12 @@ void *conn_handler(void *vargs)
     long total_len = atoi(req->conn_len);
 
     if (total_read < total_len) {
-        printf("CONN_LEN:<%d>, already read:%d\n", total_len, req->body_len);
         is_multipart = 1;
         body_old = req->body;
         req->body = calloc(total_len + 1, 1); //point body to new concatenated body, a hacky C thing
         memcpy(req->body, body_old, total_read); //concatenate old body to new body
 
         /*HANDLE MULTIPART FILE UPLOAD*/
-        //printf("FULLBODY:<%s>\n", req->body);
-
         fcntl(client_fd, F_SETFL, O_NONBLOCK);
 
         fd_set client_fd_monitor;
@@ -281,7 +278,6 @@ void *conn_handler(void *vargs)
 
         while (total_read < total_len) {
             memset(buf, 0, sizeof(buf));
-            //usleep(200);
             if (select(client_fd +1, &client_fd_monitor, NULL, NULL, &tv) < 0) fprintf(stderr, "select() error.\n");
 
             if (is_ssl) { //https
@@ -303,8 +299,7 @@ void *conn_handler(void *vargs)
 
         int saved_flock = fcntl(client_fd, F_GETFL);
         fcntl(client_fd, F_SETFL, saved_flock & ~O_NONBLOCK);
-        printf("startlen[%d]\nfinal:[%d]\n", req->body_len, total_read); fflush(stdout);
-
+        //printf("startlen[%d]\nfinal:[%d]\n", req->body_len, total_read); fflush(stdout);
     }
 
     //Process URI (decode url, check privileges or if file exists)
@@ -359,7 +354,8 @@ void *conn_handler(void *vargs)
 
         int ret_code;
         char *data = system_output(args, env, req->body, req->body_len, &sz, &ret_code, 20000); //20s timeout on backend script
-
+        printf("%d\n", sz);
+        
         env_vars_free(&e);
         if (is_multipart) free(req->body);
 
