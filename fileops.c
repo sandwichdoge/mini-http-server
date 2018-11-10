@@ -31,7 +31,7 @@ int file_executable(char *path)
 int file_get_interpreter(char *path, char *out, size_t sz)
 {
     char buf[1024] = "";
-    FILE *fd = fopen(path, "r");
+    FILE *fd = fopen(path, "r"); if (!fd) return -1;
     if (fread(buf, 1, sizeof(buf), fd) < 0) return -1;
     fclose(fd);
 

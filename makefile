@@ -32,10 +32,10 @@ http_server.o: http_server.c socket/serversocket.o socket/http-ssl.o http-reques
 	$(CC) -c -g http_server.c -o http_server.o
 
 http-request.o: http-request.c http-request.h
-	$(CC) -c http-request.c
+	$(CC) -c -g http-request.c
 
 fileops.o: fileops.c fileops.h
-	$(CC) -c fileops.c
+	$(CC) -c -g fileops.c
 
 mime/http-mimes.o: mime/http-mimes.c mime/http-mimes.h
 	$(CC) -c mime/http-mimes.c -o mime/http-mimes.o
