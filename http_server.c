@@ -291,7 +291,7 @@ void *conn_handler(void *vargs)
                 n = read_data(client_fd, buf, sizeof(buf));
             }
             if (n <= 0) {
-                //perror("Error reading data.");
+                if (errno != 11) perror("Error reading data.");
                 break;
             }
 
@@ -331,7 +331,7 @@ void *conn_handler(void *vargs)
         goto cleanup;
     }
 
-    printf("res:%s\n", local_uri); fflush(stdout);
+    //printf("res:%s\n", local_uri); fflush(stdout);
     //TODO: cookie, gzip content, handle other methods like PUT, HEAD, DELETE..
     
 
@@ -356,7 +356,6 @@ void *conn_handler(void *vargs)
 
         char *env[] = {p, e.env_method, e.env_cookie, e.env_scriptpath, e.env_accept, e.env_querystr, NULL};
         char *args[] = {interpreter, p, NULL};
-
 
         int ret_code;
         char *data = system_output(args, env, req->body, req->body_len, &sz, &ret_code, 20000); //20s timeout on backend script
