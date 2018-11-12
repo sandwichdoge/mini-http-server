@@ -66,7 +66,7 @@ struct http_request *process_request(char *request)
     char *accept;
     accept = strstr(URI + uri_len, "Accept: ");
     if (accept) {
-        strncpy(ret->accept, accept + strlen("Accept: "), strchr(accept, '\n') - accept - strlen("Accept: "));
+        strncpy(ret->accept, accept + strlen("Accept: "), strchr(accept, '\n') - accept - strlen("Accept: ") - 1);
     }
     else {
         strcpy(ret->accept, "*/*"); //any mime type
@@ -76,17 +76,17 @@ struct http_request *process_request(char *request)
     char *conn_type;
     conn_type = strstr(URI + uri_len, "Connection: ");
     if (conn_type) {
-        strncpy(ret->conn_type, conn_type + strlen("Connection: "), strchr(conn_type, '\n') - conn_type - strlen("Connection: "));
+        strncpy(ret->conn_type, conn_type + strlen("Connection: "), strchr(conn_type, '\n') - conn_type - strlen("Connection: ") - 1);
     }
     else {
         strcpy(ret->conn_type, "close");
     }
 
     //Content Length
-    char *conn_len;
+    char *conn_len = NULL;
     conn_len = strstr(URI + uri_len, "Content-Length: ");
     if (conn_len) {
-        strncpy(ret->conn_len, conn_len + strlen("Content-Length: "), strchr(conn_len, '\n') - conn_len - strlen("Content-Length: "));
+        strncpy(ret->conn_len, conn_len + strlen("Content-Length: "), strchr(conn_len, '\n') - conn_len - strlen("Content-Length: ") - 1);
     }
     else {
         strcpy(ret->conn_len, "0");

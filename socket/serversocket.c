@@ -14,13 +14,21 @@ struct server_socket create_server_socket(int port)
     socklen_t len = sizeof(server);
 
     int fd = socket(AF_INET, SOCK_STREAM, 0); //Inet TCP
-    if (!fd) printf("error creating socket\n");
+    if (!fd) fprintf(stderr, "Error creating socket\n");
     int opt = 1;
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)); //optional, prevents address already in use error
+    
     err = bind(fd, (struct sockaddr*)&server, sizeof(server));
-    if (err < 0) printf("error binding\n");
+    if (err < 0) {
+        fprintf(stderr, "Error binding. Requires SU privileges if port < 1024.\n");
+        fd = -1;
+    }
+
     err = listen(fd, MAX_CONNECTIONS); //max connections
-    if (err < 0) printf("error listening\n");
+    if (err < 0) {
+        fprintf(stderr, "Error listening.\n");
+        fd = -1;
+    }
     
     ret.fd = fd;
     ret.len = len;
@@ -34,7 +42,6 @@ int read_data(int client_fd, char *buf, size_t bufsize)
 {
     memset(buf, bufsize, 0);
     return read(client_fd, buf, bufsize);
-    
 }
 
 
