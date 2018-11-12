@@ -93,6 +93,11 @@ int main()
 
     struct server_socket sock = create_server_socket(PORT);
     struct server_socket sock_ssl = create_server_socket(PORT_SSL);
+    if (sock.fd < 0 || sock_ssl.fd < 0) {
+        fprintf(stderr, "Error occurred during socket creation. Aborting.\n");
+        return -1;
+    }
+
     client_info args;
     pthread_t pthread[MAX_THREADS/2];
 
@@ -100,7 +105,7 @@ int main()
     initialize_SSL();
     CTX = SSL_CTX_new(TLS_server_method());
     if (!CTX) {
-        printf("Error creating CTX.\n");
+        fprintf(stderr, "Error creating CTX.\n");
     }
     SSL_CTX_set_options(CTX, SSL_OP_SINGLE_DH_USE);
     //SSL_CTX_set_session_cache_mode(CTX, SSL_SESS_CACHE_SERVER); CACHE_SERVER is default setting, no need to set again
@@ -113,8 +118,13 @@ int main()
     }
     
     printf("Started HTTP server on port %d and %d..\n", PORT, PORT_SSL);
+
     pid_t pid = fork(); //1 process for HTTP, 1 for HTTPS
-    if (pid == 0) {
+    if (pid == -1) {
+        perror("FATAL: Cannot create child processes.");
+        return -1;
+    }
+    else if (pid == 0) {
         args.is_ssl = 1;
         args.server_socket = sock_ssl;
     }
@@ -130,6 +140,7 @@ int main()
     }
     conn_handler(&args); //handler for 2 parent threads
 
+    //Exit with SIGINT (Ctrl+C) since it sends signal to the entire process group anyway, thus child and parent will both be terminated.
     //printf("Server stopped.\n");
     //shutdown_SSL();
     return 0;
@@ -154,7 +165,7 @@ void *conn_handler(void *vargs)
     long sz;
     char *body_old = NULL;
 
-    /*LOOP HERE*/
+    /*BIG LOOP HERE*/
     while (1) { //these declarations should be optimized by compiler anyway, it's ok to declare within loop
 
     int bytes_read = 0;
@@ -173,7 +184,11 @@ void *conn_handler(void *vargs)
     memset(content_len, 0, sizeof(content_len));
 
     client_fd = accept(server_socket.fd, (struct sockaddr*)server_socket.handle, &server_socket.len);
+    if (client_fd < 0) {
+        fprintf(stderr, "Error accepting incoming connections.\n");
+    }
     //printf("Connection established, fd:%d, thread:%d\n", client_fd, pthread_self()); fflush(stdout);
+
 
     /*INITIALIZE SSL CONNECTION IF CONNECTED VIA HTTPS*/
     if (is_ssl) {
@@ -200,6 +215,7 @@ void *conn_handler(void *vargs)
         }
     }
 
+
     /*READ HTTP REQUEST FROM CLIENT (INCLUDE HEADER+BODY)*/
     /*read data via TCP stream, append new data to heap
      *keep reading and allocating memory for new data until NULL or 20MB max reached
@@ -208,6 +224,11 @@ void *conn_handler(void *vargs)
     int n = 0;
     int c = 5; //counter to handle SSL_ERROR_WANT_READ, after 5 retries terminate conn and clean up
     request = malloc(1); //request points to new data, must be freed during cleanup
+    if (request == NULL) {
+        fprintf(stderr, "Out of memory.\n");
+        return NULL;
+    }
+
     do {
         if (is_ssl) { //https
             n = read_data_ssl(conn_SSL, buf, sizeof(buf));
@@ -241,7 +262,7 @@ void *conn_handler(void *vargs)
         }
 
         if (bytes_read >= MAX_REQUEST_LEN) {
-            fprintf(stderr, "Request exceeds 20MB limit.\n");
+            fprintf(stderr, "Request size exceeds limit.\n");
             break;
         }
     } while (buf[sizeof(buf)] != 0); //stop if request is larger than 20MB or reached NULL
@@ -255,9 +276,8 @@ void *conn_handler(void *vargs)
     struct http_request *req = process_request(request);
 
     
-    //New feature- multipart file uploads
+    /*HANDLE MULTIPART FILE UPLOAD*/
     //IF total data read < Content-Length, keep reading
-    //TODO: necessary to properly split boundary from request header? or just send everything to backend?
     long total_read = req->body_len;
     long total_len = atoi(req->conn_len);
 
@@ -267,7 +287,6 @@ void *conn_handler(void *vargs)
         req->body = calloc(total_len + 1, 1); //point body to new concatenated body, a hacky C thing
         memcpy(req->body, body_old, total_read); //concatenate old body to new body
 
-        /*HANDLE MULTIPART FILE UPLOAD*/
         fcntl(client_fd, F_SETFL, O_NONBLOCK);
 
         fd_set client_fd_monitor;
@@ -299,8 +318,8 @@ void *conn_handler(void *vargs)
 
         int saved_flock = fcntl(client_fd, F_GETFL);
         fcntl(client_fd, F_SETFL, saved_flock & ~O_NONBLOCK);
-        //printf("startlen[%d]\nfinal:[%d]\n", req->body_len, total_read); fflush(stdout);
     }
+
 
     //Process URI (decode url, check privileges or if file exists)
     if (strcmp(req->URI, "/") == 0) strcpy(req->URI, HOMEPAGE); //when URI is "/", e.g. GET / HTTP/1.1
@@ -485,7 +504,6 @@ int generate_header(char *header, char *body, char *mime_type, char *content_len
 
     //add content-length to header
     strip_trailing_lf(header, 2);
-    
     strcat(header, "\ncontent-length: ");
     strcat(header, content_len);
     strcat(header, "server: mini-http-server\r\n\r\n");
@@ -528,6 +546,10 @@ void serve_static_content(int client_fd, char *local_uri, long content_len, SSL 
     int bytes_read = 0; //bytes read from local resource
     char response[4096]; //buffer
     FILE *content_fd = fopen(local_uri, "r"); //get requested file content
+    if (!content_fd) {
+        fprintf(stderr, "Cannot open local file for reading: %s\n", local_uri);
+        return;
+    }
     int bytes_written = 0; //bytes sent to remote client
     bytes_read = 0;
 
