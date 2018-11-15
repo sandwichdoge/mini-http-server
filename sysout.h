@@ -101,6 +101,8 @@ char* system_output(char **args, char **env, char *input_data, long input_sz, lo
         close(fds[0]);
         close(fds[1]);
 
+        semctl(sem, 0, IPC_RMID, NULL); //remove semaphore for OS
+
         *(output + bytes_read_total) = '\0';
         *retcode = ret_code;
         *output_sz = bytes_read_total;
