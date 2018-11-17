@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <sys/stat.h>
 
-long file_get_size(char *path);
+size_t file_get_size(char *path);
 int file_exists(char *path);
 int file_readable(char *path);
 int file_writable(char *path);

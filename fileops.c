@@ -53,12 +53,12 @@ int is_dir(char *path)
 }
 
 
-long file_get_size(char *path)
+size_t file_get_size(char *path)
 {
     FILE *fd = fopen(path, "r");
     if (fd == NULL) return 0;
     fseek(fd, 0L, SEEK_END);
-    long ret = ftell(fd);
+    size_t ret = ftell(fd);
     fclose(fd);
     return ret;
 }
