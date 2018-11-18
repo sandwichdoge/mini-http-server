@@ -20,7 +20,6 @@
 #define MAX_REQUEST_LEN 128*1024
 #define CACHE_TABLE_SIZE 1024
 
-//gcc http_server.c serversocket.c http-request.c fileops.c http-mimes.c -lpthread
 
 /*Creating socket server in C:
  *socket() -> setsocketopt() -> bind() -> listen() -> accept()
@@ -484,7 +483,6 @@ void *conn_handler(void *vargs)
     if (!ssl_err) free(request); //free() shouldn't do anything if pointer is NULL, but in multithreading it's funky, so check jic
     if (is_ssl && conn_SSL != NULL) disconnect_SSL(conn_SSL, ssl_err); //will call additional SSL_free() if there's error (ssl_err != 0)
     sock_cleanup(client_fd);
-    //printf("Cleaned up.\n"); fflush(stdout);
     }
 
     return NULL;
