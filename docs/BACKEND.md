@@ -8,8 +8,8 @@ parameters are passed down to the this interpreter program via env vars:
 REQUEST_METHOD, HTTP_COOKIE, SCRIPT_URI, HTTP_ACCEPT, QUERY_STRING, CONTENT_LENGTH
 
 - The output are whatever the interpreter prints to stdout. This data 
-will be sent directly to receiving client.
+will be sent directly to the receiving client.
 
 - CGI programming is supported.
 
-- You have to parse data from multipart/form-data uploads yourself. The body is piped with interpreter's STDIN
+- You have to parse data from multipart/form-data uploads yourself. The request body is piped with interpreter's STDIN
