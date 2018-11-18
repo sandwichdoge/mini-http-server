@@ -400,6 +400,7 @@ void *conn_handler(void *vargs)
                 f = cache_add_file(local_uri);
                 if (f == NULL) {
                     fprintf(stderr, "Error caching server-side resource.\n");
+                    http_send_error(client_fd, 500, conn_SSL); //go back and send data from disk instead?
                     goto cleanup;
                 }
                 table_add(args->cache_table, args->cache_table_len, f);
