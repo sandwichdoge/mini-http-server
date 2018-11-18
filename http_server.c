@@ -15,6 +15,7 @@
 #include "sysout.h"
 #include "casing.h" //uppercase() and lowercase()
 #include "str-utils/str-utils.h"
+#include "caching/caching.h"
 
 #define MAX_REQUEST_LEN 128*1024
 
@@ -60,7 +61,7 @@ int env_vars_init(env_vars_t *env, struct http_request *req);
 int env_vars_free(env_vars_t *env);
 int load_global_config();
 int generate_header(char *header, char *body, char *mime_type, char *content_len);
-int generate_header_static(char *header, char *mime_type, char *content_len);
+int generate_header_static(char *header, char *local_uri);
 
 
 char SITEPATH[1024] = ""; //physical path of website on disk
@@ -423,13 +424,9 @@ void *conn_handler(void *vargs)
         free(req);
     }
     else if(is_interpretable == 0) { //CASE 2: uri is a static page
-        get_mime_type(mime_type, req->URI); //MIME type for response header
-
-        sz = file_get_size(local_uri);
-        sprintf(content_len, "%ld", sz);
 
         //generate header for static media
-        generate_header_static(header, mime_type, content_len);
+        generate_header_static(header, local_uri);
 
         //send header
         if (is_ssl) {
@@ -438,6 +435,7 @@ void *conn_handler(void *vargs)
         else {
             send_data(client_fd, header, strlen(header));
         }
+
         //send body data
         serve_static_content(client_fd, local_uri, sz, conn_SSL);
     }
@@ -515,8 +513,16 @@ int generate_header(char *header, char *body, char *mime_type, char *content_len
 
 
 /*Generate header for static media*/
-int generate_header_static(char *header, char *mime_type, char *content_len)
+int generate_header_static(char *header, char *local_uri)
 {
+    char content_len [16] = "";
+    char mime_type[128] = "";
+
+    get_mime_type(mime_type, local_uri); //MIME type for response header
+
+    size_t sz = file_get_size(local_uri);
+    sprintf(content_len, "%ld", sz);
+
     strcpy(header, "HTTP/1.1 200 OK\n");
     strcat(header, "Content-Type: ");
     strcat(header, mime_type);
