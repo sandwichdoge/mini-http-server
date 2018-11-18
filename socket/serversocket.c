@@ -40,7 +40,7 @@ struct server_socket create_server_socket(int port)
 /*read data via tcp*/
 int read_data(int client_fd, char *buf, size_t bufsize)
 {
-    memset(buf, bufsize, 0);
+    memset(buf, 0, bufsize);
     return read(client_fd, buf, bufsize);
 }
 
@@ -60,7 +60,7 @@ int send_data(int client_fd, char *data, size_t len)
 
 int read_data_ssl(SSL *SSL_conn, char *buf, size_t bufsize)
 {
-    memset(buf, bufsize, 0);
+    memset(buf, 0, bufsize);
     return SSL_read(SSL_conn, buf, bufsize);
 }
 

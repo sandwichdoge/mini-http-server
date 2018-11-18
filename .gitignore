@@ -1,6 +1,8 @@
 *.o
 *.pem
 *.conf
+*.out
+*.txt
 start-server
 demo-site-1
 demo-site-2

@@ -15,10 +15,11 @@
 #include "sysout.h"
 #include "casing.h" //uppercase() and lowercase()
 #include "str-utils/str-utils.h"
+#include "caching/caching.h"
 
 #define MAX_REQUEST_LEN 128*1024
+#define CACHE_TABLE_SIZE 1024
 
-//gcc http_server.c serversocket.c http-request.c fileops.c http-mimes.c -lpthread
 
 /*Creating socket server in C:
  *socket() -> setsocketopt() -> bind() -> listen() -> accept()
@@ -36,8 +37,10 @@
 
 
 typedef struct client_info {
-    int is_ssl;
     struct server_socket server_socket;
+    int is_ssl;
+    cache_file_t **cache_table;
+    int cache_table_len;
 } client_info;
 
 
@@ -53,14 +56,18 @@ typedef struct env_vars_t {
 
 
 void *conn_handler(void *fd);
-void serve_static_content(int client_fd, char *local_uri, long content_len, SSL *conn_SSL);
+void serve_static_content_from_disk(int client_fd, char *local_uri, SSL *conn_SSL);
+void serve_static_content_from_cache(int client_fd, cache_file_t *f, SSL *conn_SSL);
 void http_send_error(int client_fd, int errcode, SSL *conn_SSL);
 int is_valid_method(char *method);
 int env_vars_init(env_vars_t *env, struct http_request *req);
 int env_vars_free(env_vars_t *env);
 int load_global_config();
 int generate_header(char *header, char *body, char *mime_type, char *content_len);
-int generate_header_static(char *header, char *mime_type, char *content_len);
+int generate_header_static_from_disk(char *header, char *local_uri);
+int generate_header_static_from_cache(char *header, cache_file_t *f);
+void shutdown_server();
+
 
 
 char SITEPATH[1024] = ""; //physical path of website on disk
@@ -71,6 +78,8 @@ char CERT_PRIV_KEY_FILE[1024]; //pem file cert
 int PORT = 80; //default port 80
 int PORT_SSL = 443; //default port for SSL is 443
 int MAX_THREADS = 1024;
+int CACHING_ENABLED = 1;
+cache_file_t **CACHE_TABLE; //cache table
 SSL_CTX *CTX;
 
 
@@ -132,17 +141,20 @@ int main()
         args.is_ssl = 0;
         args.server_socket = sock;
     }
+    CACHE_TABLE = table_create(CACHE_TABLE_SIZE);
+    args.cache_table = CACHE_TABLE;
+    args.cache_table_len = CACHE_TABLE_SIZE;
 
     /*FROM THIS POINT ON WE HAVE n CHILD THREADS, n/2 FOR HTTP AND n/2 FOR HTTPS*/
+    signal(SIGINT, shutdown_server);
     signal(SIGPIPE, SIG_IGN); //handle premature termination of connection from client
     for (int i = 0; i < MAX_THREADS/2 - 1; ++i) {
         pthread_create(&pthread[i], NULL, conn_handler, (void*)&args); //create a thread for each new connection
     }
     conn_handler(&args); //handler for 2 parent threads
 
-    //Exit with SIGINT (Ctrl+C) since it sends signal to the entire process group anyway, thus child and parent will both be terminated.
-    //printf("Server stopped.\n");
-    //shutdown_SSL();
+    //User will terminate server with Ctrl+C.
+
     return 0;
 }
 
@@ -187,7 +199,7 @@ void *conn_handler(void *vargs)
     if (client_fd < 0) {
         fprintf(stderr, "Error accepting incoming connections.\n");
     }
-    //printf("Connection established, fd:%d, thread:%d\n", client_fd, pthread_self()); fflush(stdout);
+    //printf("Connection established, fd:%d, thread:%ld\n", client_fd, pthread_self()); fflush(stdout);
 
 
     /*INITIALIZE SSL CONNECTION IF CONNECTED VIA HTTPS*/
@@ -275,7 +287,7 @@ void *conn_handler(void *vargs)
     /*PROCESS HEADER FROM CLIENT*/
     struct http_request *req = process_request(request);
 
-    
+
     /*HANDLE MULTIPART FILE UPLOAD*/
     //IF total data read < Content-Length, keep reading
     long total_read = req->body_len;
@@ -422,23 +434,41 @@ void *conn_handler(void *vargs)
         free(req);
     }
     else if(is_interpretable == 0) { //CASE 2: uri is a static page
-        get_mime_type(mime_type, req->URI); //MIME type for response header
+        if (CACHING_ENABLED) { /*TRY TO GET CONTENT FROM CACHE*/
+            cache_file_t *f = table_find(args->cache_table, args->cache_table_len, local_uri);
+            if (f == NULL) {  //file is not cached, cache it to memory and cache table
+                f = cache_add_file(local_uri);
+                table_add(args->cache_table, args->cache_table_len, f);
+            }
 
-        sz = file_get_size(local_uri);
-        sprintf(content_len, "%ld", sz);
-
-        //generate header for static media
-        generate_header_static(header, mime_type, content_len);
-
-        //send header
-        if (is_ssl) {
-            send_data_ssl(conn_SSL, header, strlen(header));
+            //generate header from cached media
+            generate_header_static_from_cache(header, f);
+            
+            //send header
+            if (is_ssl) {
+                send_data_ssl(conn_SSL, header, strlen(header));
+            }
+            else {
+                send_data(client_fd, header, strlen(header));
+            }
+            //send body data
+            serve_static_content_from_cache(client_fd, f, conn_SSL);
         }
-        else {
-            send_data(client_fd, header, strlen(header));
+        else { /*READ CONTENT FROM DISK AND SERVE IT*/
+            //generate header for static media
+            generate_header_static_from_disk(header, local_uri);
+
+            //send header
+            if (is_ssl) {
+                send_data_ssl(conn_SSL, header, strlen(header));
+            }
+            else {
+                send_data(client_fd, header, strlen(header));
+            }
+
+            //send body data
+            serve_static_content_from_disk(client_fd, local_uri, conn_SSL);
         }
-        //send body data
-        serve_static_content(client_fd, local_uri, sz, conn_SSL);
     }
     else { //error reading requested data or system can't interpret requested script
         http_send_error(client_fd, 500, conn_SSL);
@@ -453,7 +483,6 @@ void *conn_handler(void *vargs)
     if (!ssl_err) free(request); //free() shouldn't do anything if pointer is NULL, but in multithreading it's funky, so check jic
     if (is_ssl && conn_SSL != NULL) disconnect_SSL(conn_SSL, ssl_err); //will call additional SSL_free() if there's error (ssl_err != 0)
     sock_cleanup(client_fd);
-    //printf("Cleaned up.\n"); fflush(stdout);
     }
 
     return NULL;
@@ -479,7 +508,7 @@ int generate_header(char *header, char *body, char *mime_type, char *content_len
     lowercase(user_defined_header, buf, doc_begin - body);
 
 
-    strncpy(header, user_defined_header, sizeof(user_defined_header));
+    strncpy(header, user_defined_header, sizeof(user_defined_header) - 1);
 
     //define content-type if back-end does not
     char *cont_type = strstr(user_defined_header, "content-type: ");
@@ -514,8 +543,38 @@ int generate_header(char *header, char *body, char *mime_type, char *content_len
 
 
 /*Generate header for static media*/
-int generate_header_static(char *header, char *mime_type, char *content_len)
+int generate_header_static_from_disk(char *header, char *local_uri)
 {
+    char content_len [16] = "";
+    char mime_type[128] = "";
+
+    get_mime_type(mime_type, local_uri); //MIME type for response header
+
+    size_t sz = file_get_size(local_uri);
+    sprintf(content_len, "%ld", sz);
+
+    strcpy(header, "HTTP/1.1 200 OK\n");
+    strcat(header, "Content-Type: ");
+    strcat(header, mime_type);
+    
+    strcat(header, "\ncontent-length: ");
+    strcat(header, content_len);
+
+    strcat(header, "\r\n\r\n"); //mandatory blank line separating header
+    return 0;
+}
+
+
+/*Generate header for static media*/
+int generate_header_static_from_cache(char *header, cache_file_t *f)
+{
+    char content_len [16] = "";
+    char mime_type[128] = "";
+
+    get_mime_type(mime_type, f->fname); //MIME type for response header
+
+    sprintf(content_len, "%ld", f->sz);
+
     strcpy(header, "HTTP/1.1 200 OK\n");
     strcat(header, "Content-Type: ");
     strcat(header, mime_type);
@@ -541,9 +600,10 @@ int is_valid_method(char *method)
 
 
 //read local_uri and write to client socket pointed to by client_fd
-void serve_static_content(int client_fd, char *local_uri, long content_len, SSL *conn_SSL)
+void serve_static_content_from_disk(int client_fd, char *local_uri, SSL *conn_SSL)
 {
     int bytes_read = 0; //bytes read from local resource
+    size_t content_len = file_get_size(local_uri);
     char response[4096]; //buffer
     FILE *content_fd = fopen(local_uri, "r"); //get requested file content
     if (!content_fd) {
@@ -566,6 +626,31 @@ void serve_static_content(int client_fd, char *local_uri, long content_len, SSL 
     }
 
     fclose(content_fd);
+}
+
+
+//read data from cache and write to client socket pointed to by client_fd
+void serve_static_content_from_cache(int client_fd, cache_file_t *f, SSL *conn_SSL)
+{
+    size_t content_len = f->sz;
+
+    int bytes_written = 0; //bytes sent to remote client
+    int bytes_to_write = 4096; //send 4096 bytes at a time
+
+    while (bytes_written < content_len) {
+        if (bytes_written + bytes_to_write > content_len) {
+            bytes_to_write = content_len - bytes_written;
+        }
+        
+        if (conn_SSL) {
+            bytes_written += send_data_ssl(conn_SSL, f->addr + bytes_written, bytes_to_write);
+        }
+        else {
+            bytes_written += send_data(client_fd, f->addr + bytes_written, bytes_to_write);
+        }
+        if (bytes_written < 0) break; //error occurred, close fd and clean up;
+    }
+
 }
 
 
@@ -673,9 +758,24 @@ int load_global_config()
     s += strlen("MAX_THREADS="); //len of "MAX_THREADS="
     MAX_THREADS = atoi(s);
 
+    //CACHING_ENABLED: enable server-side caching of static media
+    s = strstr(buf, "CACHING_ENABLED=");
+    if (s == NULL) CACHING_ENABLED = 1; //no config, use 1
+    s += strlen("CACHING_ENABLED="); //len of "MAX_THREADS="
+    MAX_THREADS = atoi(s);
+
     //other configs below
 
     return 0;
+}
+
+
+void shutdown_server()
+{
+    table_destroy(CACHE_TABLE, CACHE_TABLE_SIZE, 1);
+    shutdown_SSL();
+    printf("Server stopped.\n");
+    exit(0);
 }
 
 

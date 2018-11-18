@@ -32,7 +32,7 @@ int file_get_interpreter(char *path, char *out, size_t sz)
 {
     char buf[1024] = "";
     FILE *fd = fopen(path, "r"); if (!fd) return -1;
-    if (fread(buf, 1, sizeof(buf), fd) < 0) return -1;
+    if (fread(buf, 1, sizeof(buf), fd) == 0) return -1;
     fclose(fd);
 
     if (buf[0] != '#' || buf[1] != '!') return 0; //file is not for interpreting
@@ -53,12 +53,14 @@ int is_dir(char *path)
 }
 
 
-long file_get_size(char *path)
+/*Get file size
+ *Return size of file in bytes, or 0 on failure*/
+size_t file_get_size(char *path)
 {
     FILE *fd = fopen(path, "r");
     if (fd == NULL) return 0;
     fseek(fd, 0L, SEEK_END);
-    long ret = ftell(fd);
+    size_t ret = ftell(fd);
     fclose(fd);
     return ret;
 }

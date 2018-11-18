@@ -21,7 +21,7 @@ struct http_request *process_request(char *request)
     ret->body_len = 0;
 
     //method; method_len = len of method string
-    for (method_len; request[method_len] != ' ' && method_len <= sizeof(ret->method); ++method_len);
+    for (; request[method_len] != ' ' && method_len <= sizeof(ret->method); ++method_len);
     memcpy(ret->method, request, method_len);
     ret->method[method_len] = 0; //NULL terminate
 

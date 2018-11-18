@@ -108,4 +108,5 @@ char* system_output(char **args, char **env, char *input_data, long input_sz, lo
         *output_sz = bytes_read_total;
         return output; //caller needs to free() this
     }
+    return NULL;
 }
