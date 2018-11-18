@@ -1,3 +1,5 @@
+#ifndef HASH_TABLE_H_
+#define HASH_TABLE_H_
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -85,3 +87,4 @@ int table_add(cache_file_t **TABLE, int table_len, cache_file_t *node)
 
         return 0;
 }
+#endif

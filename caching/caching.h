@@ -7,7 +7,7 @@
 /*Cache file into memory.
  *Return address of file content buffer, file size and filename
  *Everything is stored on the heap*/
-cache_file_t* cache_file(char *path, cache_file_t **TABLE, int table_len)
+cache_file_t* cache_add_file(char *path)
 {
         cache_file_t *ret = (cache_file_t*)malloc(sizeof(cache_file_t));
 
@@ -27,8 +27,6 @@ cache_file_t* cache_file(char *path, cache_file_t **TABLE, int table_len)
         time(&ret->last_accessed);
 
         ret->next = NULL;
-
-        table_add(TABLE, table_len, ret);
 
         return ret;
 }
