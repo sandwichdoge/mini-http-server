@@ -1,22 +1,20 @@
-#ifndef HASH_TABLE_H_
-#define HASH_TABLE_H_
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
-
-
-typedef struct cache_file_t {
-        char *fname;
-        size_t sz;
-        void *addr;
-        time_t last_accessed;
-        struct cache_file_t *next;
-} cache_file_t;
-
+#include "caching.h"
 
 cache_file_t** table_create(int len)
 {
         return (cache_file_t**)calloc(len, sizeof(cache_file_t*));
+}
+
+
+/*Hash key/filename to gain index no*/
+static size_t hash(char *str, size_t max)
+{
+        size_t sum = 0;
+        for (int i = 0; str[i]; i++) { //optimized
+                sum += str[i] * (i + 1);
+        }
+
+        return sum % max;
 }
 
 
@@ -40,17 +38,6 @@ int table_destroy(cache_file_t **TABLE, int len, int free_node)
         return 0;
 }
 
-
-/*Hash key/filename to gain index no*/
-static size_t hash(char *str, size_t max)
-{
-        size_t sum = 0;
-        for (int i = 0; str[i]; i++) { //optimized
-                sum += str[i] * (i + 1);
-        }
-
-        return sum % max;
-}
 
 
 /*find node in table based on key string*/
@@ -81,10 +68,35 @@ int table_add(cache_file_t **TABLE, int table_len, cache_file_t *node)
                 TABLE[hkey] = node;
                 return 0;
         }
-        /*if key already exists*/
-        node->next = head;
-        TABLE[hkey] = node;
+        else { /*if key already exists*/
+                node->next = head;
+                TABLE[hkey] = node;
+        }
 
         return 0;
 }
-#endif
+
+
+int table_del_node(cache_file_t **TABLE, int table_len, char *key)
+{
+        cache_file_t *f = table_find(TABLE, table_len, key);
+        cache_file_t *next = f->next;
+        size_t hkey = hash(key, table_len);
+
+        if (f == NULL) return -1; //node with key not found
+
+        if (next) { //copy value of next node into current node, free next node
+                f->addr = next->addr;
+                f->fname = next->fname;
+                f->last_accessed = next->last_accessed;
+                f->sz = next->sz;
+                f->next = next->next;
+                cache_remove_file(next);
+        }
+        else { //found node is the only one of its line
+                cache_remove_file(f);
+                TABLE[hkey] = NULL;
+        }
+
+        return 0;
+}

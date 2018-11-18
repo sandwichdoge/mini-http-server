@@ -12,8 +12,8 @@ conf_ssl_key_file_pem := SSL_KEY_FILE_PEM=$(current_dir)/key.pem
 conf_max_threads := MAX_THREADS=1024
 conf_caching := CACHING_ENABLED=1
 
-all: http_server.o socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o str-utils/str-utils.o
-	$(CC) http_server.o socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o str-utils/str-utils.o $(CFLAGS) -o start-server
+all: http_server.o socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o str-utils/str-utils.o caching/caching.o caching/hashtable.o
+	$(CC) http_server.o socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o str-utils/str-utils.o caching/caching.o caching/hashtable.o $(CFLAGS) -o start-server
 	
 config:
 	@echo GENERATING CONFIGS..
@@ -29,7 +29,7 @@ config:
 
 
 
-http_server.o: http_server.c socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o str-utils/casing.h str-utils/str-utils.o sysout.h
+http_server.o: http_server.c socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o str-utils/casing.h str-utils/str-utils.o caching/caching.o caching/hashtable.o sysout.h
 	$(CC) -c -g http_server.c -o http_server.o $(CFLAGS)
 
 http-request.o: http-request.c http-request.h
@@ -50,6 +50,12 @@ http-ssl.o: socket/http-ssl.c socket/http-ssl.h
 str-utils.o: str-utils/str-utils.c str-utils/str-utils.h
 	$(CC) -c str-utils/str-utils.c
 
+caching.o: caching/caching.c caching/caching.h caching/hashtable.o
+	$(CC) -c -g caching/caching.c $(CFLAGS)
+
+hashtable.o: caching/hashtable.c
+	$(CC) -c -g caching/hashtable.c $(CFLAGS)
+
 ssl-ca:
 	openssl req -newkey rsa:2048 -nodes -keyout key.pem -x509 -days 365 -out certificate.pem
 	openssl x509 -text -noout -in certificate.pem
@@ -57,4 +63,4 @@ ssl-ca:
 
 
 clean:
-	rm socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o str-utils/str-utils.o http_server.o
+	rm socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o str-utils/str-utils.o http_server.o caching/*.o
