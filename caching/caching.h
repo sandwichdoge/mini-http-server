@@ -12,6 +12,7 @@ cache_file_t* cache_file(char *path, cache_file_t **TABLE, int table_len)
         cache_file_t *ret = (cache_file_t*)malloc(sizeof(cache_file_t));
 
         size_t filesz = file_get_size(path);
+        if (filesz == 0) return NULL; //can't open file
         ret->addr = (char*)malloc(filesz);
         ret->fname = (char*)malloc(strlen(path)+1);
 
@@ -22,6 +23,8 @@ cache_file_t* cache_file(char *path, cache_file_t **TABLE, int table_len)
         fclose(fd);
 
         ret->sz = filesz;
+
+        time(&ret->last_accessed);
 
         ret->next = NULL;
 

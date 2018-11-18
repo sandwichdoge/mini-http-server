@@ -53,6 +53,8 @@ int is_dir(char *path)
 }
 
 
+/*Get file size
+ *Return size of file in bytes, or 0 on failure*/
 size_t file_get_size(char *path)
 {
     FILE *fd = fopen(path, "r");

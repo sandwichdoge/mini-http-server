@@ -71,6 +71,7 @@ char CERT_PRIV_KEY_FILE[1024]; //pem file cert
 int PORT = 80; //default port 80
 int PORT_SSL = 443; //default port for SSL is 443
 int MAX_THREADS = 1024;
+int CACHING_ENABLED = 1;
 SSL_CTX *CTX;
 
 
@@ -275,7 +276,7 @@ void *conn_handler(void *vargs)
     /*PROCESS HEADER FROM CLIENT*/
     struct http_request *req = process_request(request);
 
-    
+
     /*HANDLE MULTIPART FILE UPLOAD*/
     //IF total data read < Content-Length, keep reading
     long total_read = req->body_len;
@@ -671,6 +672,12 @@ int load_global_config()
     s = strstr(buf, "MAX_THREADS=");
     if (s == NULL) MAX_THREADS = 1024; //no config, use 1024
     s += strlen("MAX_THREADS="); //len of "MAX_THREADS="
+    MAX_THREADS = atoi(s);
+
+    //CACHING_ENABLED: enable server-side caching of static media
+    s = strstr(buf, "CACHING_ENABLED=");
+    if (s == NULL) CACHING_ENABLED = 1; //no config, use 1
+    s += strlen("CACHING_ENABLED="); //len of "MAX_THREADS="
     MAX_THREADS = atoi(s);
 
     //other configs below

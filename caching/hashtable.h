@@ -1,11 +1,13 @@
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 
 typedef struct cache_file_t {
         char *fname;
         size_t sz;
         void *addr;
+        time_t last_accessed;
         struct cache_file_t *next;
 } cache_file_t;
 
@@ -56,7 +58,10 @@ cache_file_t* table_find(cache_file_t **TABLE, int table_len, char *key)
         cache_file_t *node = TABLE[hkey];
 
         while (node != NULL) {
-                if (strcmp(node->fname, key) == 0) return node;
+                if (strcmp(node->fname, key) == 0) {
+                        time(&node->last_accessed);
+                        return node;
+                }
                 node = node->next;
         }
 
