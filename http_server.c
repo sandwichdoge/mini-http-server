@@ -438,6 +438,10 @@ void *conn_handler(void *vargs)
             cache_file_t *f = table_find(args->cache_table, args->cache_table_len, local_uri);
             if (f == NULL) {  //file is not cached, cache it to memory and cache table
                 f = cache_add_file(local_uri);
+                if (f == NULL) {
+                    fprintf(stderr, "Error caching server-side resource.\n");
+                    goto cleanup;
+                }
                 table_add(args->cache_table, args->cache_table_len, f);
             }
 
