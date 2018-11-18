@@ -28,3 +28,14 @@ cache_file_t* cache_add_file(char *path)
 
         return ret;
 }
+
+
+/*Remove file from memory buffer*/
+int cache_remove_file(cache_file_t *f)
+{
+        free(f->addr);
+        free(f->fname);
+        free(f);
+
+        return 0;
+}
