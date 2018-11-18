@@ -29,14 +29,14 @@ config:
 
 
 
-http_server.o: http_server.c socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o casing.h str-utils/str-utils.o sysout.h
+http_server.o: http_server.c socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o str-utils/casing.h str-utils/str-utils.o sysout.h
 	$(CC) -c -g http_server.c -o http_server.o $(CFLAGS)
 
 http-request.o: http-request.c http-request.h
 	$(CC) -c -g http-request.c $(CFLAGS)
 
-fileops.o: fileops.c fileops.h
-	$(CC) -c -g fileops.c $(CFLAGS)
+fileops.o: fileops/fileops.c fileops/fileops.h
+	$(CC) -c -g fileops/fileops.c $(CFLAGS)
 
 mime/http-mimes.o: mime/http-mimes.c mime/http-mimes.h
 	$(CC) -c mime/http-mimes.c -o mime/http-mimes.o $(CFLAGS)

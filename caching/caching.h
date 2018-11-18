@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "hashtable.h"
-#include "../fileops.h"
+#include "../fileops/fileops.h"
 
 
 /*Cache file into memory.

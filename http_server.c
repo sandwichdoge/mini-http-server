@@ -10,10 +10,10 @@
 #include "socket/serversocket.h"
 #include "socket/http-ssl.h"
 #include "http-request.h"
-#include "fileops.h"
+#include "fileops/fileops.h"
 #include "mime/http-mimes.h"
 #include "sysout.h"
-#include "casing.h" //uppercase() and lowercase()
+#include "str-utils/casing.h" //uppercase() and lowercase()
 #include "str-utils/str-utils.h"
 #include "caching/caching.h"
 
