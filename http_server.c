@@ -56,9 +56,6 @@ typedef struct env_vars_t {
 
 
 void *conn_handler(void *fd);
-void serve_static_content_from_disk(int client_fd, char *local_uri, SSL *conn_SSL);
-void serve_static_content_from_cache(int client_fd, cache_file_t *f, SSL *conn_SSL);
-void http_send_error(int client_fd, int errcode, SSL *conn_SSL);
 int is_valid_method(char *method);
 int env_vars_init(env_vars_t *env, struct http_request *req);
 int env_vars_free(env_vars_t *env);
@@ -66,21 +63,25 @@ int load_global_config();
 int generate_header(char *header, char *body, char *mime_type, char *content_len);
 int generate_header_static_from_disk(char *header, char *local_uri);
 int generate_header_static_from_cache(char *header, cache_file_t *f);
+void serve_static_content_from_disk(int client_fd, char *local_uri, SSL *conn_SSL);
+void serve_static_content_from_cache(int client_fd, cache_file_t *f, SSL *conn_SSL);
+void http_send_error(int client_fd, int errcode, SSL *conn_SSL);
 void shutdown_server();
 
 
-
-char SITEPATH[1024] = ""; //physical path of website on disk
-int SITEPATH_LEN = 0;
-char HOMEPAGE[512] = ""; //default index page
-char CERT_PUB_KEY_FILE[1024]; //pem file cert
+/*Global variables*/
+char SITEPATH[1024] = "";            //physical path of website on disk
+int SITEPATH_LEN = 0;                  //len of SITEPATH
+char HOMEPAGE[512] = "";           //default index page
+char CERT_PUB_KEY_FILE[1024];  //pem file cert
 char CERT_PRIV_KEY_FILE[1024]; //pem file cert
-int PORT = 80; //default port 80
-int PORT_SSL = 443; //default port for SSL is 443
-int MAX_THREADS = 1024;
-int CACHING_ENABLED = 1;
-cache_file_t **CACHE_TABLE; //cache table
-SSL_CTX *CTX;
+int PORT = 80;                              //default port 80
+int PORT_SSL = 443;                     //default port for SSL is 443
+int MAX_THREADS = 1024;            //maximum number of threads
+int CACHING_ENABLED = 1;          //enable server-side caching
+cache_file_t **CACHE_TABLE;       //cache table
+SSL_CTX *CTX;                              //SSL cert
+
 
 
 int main()
@@ -119,13 +120,13 @@ int main()
     SSL_CTX_set_options(CTX, SSL_OP_SINGLE_DH_USE);
     //SSL_CTX_set_session_cache_mode(CTX, SSL_SESS_CACHE_SERVER); CACHE_SERVER is default setting, no need to set again
 
-
     SSL_CTX_use_certificate_file(CTX, CERT_PUB_KEY_FILE, SSL_FILETYPE_PEM);
     SSL_CTX_use_PrivateKey_file(CTX, CERT_PRIV_KEY_FILE, SSL_FILETYPE_PEM);
     if (!SSL_CTX_check_private_key(CTX)) {
         fprintf(stderr,"SSL FATAL ERROR: Can't open key files or private key does not match certificate public key.\n");
     }
     
+
     printf("Started HTTP server on port %d and %d..\n", PORT, PORT_SSL);
 
     pid_t pid = fork(); //1 process for HTTP, 1 for HTTPS
@@ -145,12 +146,14 @@ int main()
     args.cache_table = CACHE_TABLE;
     args.cache_table_len = CACHE_TABLE_SIZE;
 
-    /*FROM THIS POINT ON WE HAVE n CHILD THREADS, n/2 FOR HTTP AND n/2 FOR HTTPS*/
     signal(SIGINT, shutdown_server);
     signal(SIGPIPE, SIG_IGN); //handle premature termination of connection from client
+
+    /*CREATE n CHILD THREADS, n/2 FOR HTTP AND n/2 FOR HTTPS*/
     for (int i = 0; i < MAX_THREADS/2 - 1; ++i) {
         pthread_create(&pthread[i], NULL, conn_handler, (void*)&args); //create a thread for each new connection
     }
+
     conn_handler(&args); //handler for 2 parent threads
 
     //User will terminate server with Ctrl+C.
@@ -159,9 +162,9 @@ int main()
 }
 
 
-/*handle an incoming connection
- *return nothing
- *TODO: date, proper log, pass interpreter vars to env to support CGI*/
+/*Handle an incoming connection
+ *Return nothing
+ *TODO: date, proper log*/
 void *conn_handler(void *vargs)
 {
     client_info *args = (client_info*) vargs;
@@ -262,7 +265,7 @@ void *conn_handler(void *vargs)
             }
         }
 
-        if (n > 0) {
+        if (n > 0) { //if there's data available
             bytes_read += n;
             _new_request = (char*)realloc(request, bytes_read + 1);
             if (_new_request == NULL) {
@@ -333,7 +336,7 @@ void *conn_handler(void *vargs)
     }
 
 
-    //Process URI (decode url, check privileges or if file exists)
+    /*PROCESS URI (decode url, check privileges or if file exists)*/
     if (strcmp(req->URI, "/") == 0) strcpy(req->URI, HOMEPAGE); //when URI is "/", e.g. GET / HTTP/1.1
     decode_url(decoded_uri, req->URI); //decode url (%69ndex.html -> index.html)
 
@@ -357,7 +360,6 @@ void *conn_handler(void *vargs)
         goto cleanup;
     }
 
-    //printf("res:%s\n", local_uri); fflush(stdout);
     //TODO: cookie, gzip content, handle other methods like PUT, HEAD, DELETE..
     
 
@@ -493,10 +495,10 @@ void *conn_handler(void *vargs)
 }
 
 
-//Generate a header based on content of the body
-//body includes everything that backend script prints out, not just html content
-//*header is the processed output
-//*body is IMMUTABLE, do not attempt to modify it
+/*Generate a header based on content of the body
+ *body includes everything that backend script prints out, not just html content
+ *header is the processed output
+ *body is IMMUTABLE, do not attempt to modify it*/
 int generate_header(char *header, char *body, char *mime_type, char *content_len)
 {
     char buf[1024] = "";
@@ -546,7 +548,7 @@ int generate_header(char *header, char *body, char *mime_type, char *content_len
 }
 
 
-/*Generate header for static media*/
+/*Generate header for static media, read from disk*/
 int generate_header_static_from_disk(char *header, char *local_uri)
 {
     char content_len [16] = "";
@@ -569,7 +571,7 @@ int generate_header_static_from_disk(char *header, char *local_uri)
 }
 
 
-/*Generate header for static media*/
+/*Generate header for static media, read from cached memory*/
 int generate_header_static_from_cache(char *header, cache_file_t *f)
 {
     char content_len [16] = "";
@@ -591,7 +593,7 @@ int generate_header_static_from_cache(char *header, cache_file_t *f)
 }
 
 
-//return 0 if request method is not valid (any request that doesn't belong the methods set)
+/*Return 0 if request method is not valid (any request that doesn't belong the methods set)*/
 int is_valid_method(char *method)
 {
     char *methods[] = {"GET", "POST", "HEAD", "PUT", "DELETE", "PATCH", "CONNECT", "OPTIONS"};
@@ -603,7 +605,7 @@ int is_valid_method(char *method)
 }
 
 
-//read local_uri and write to client socket pointed to by client_fd
+//Read local_uri and write to client socket pointed to by client_fd
 void serve_static_content_from_disk(int client_fd, char *local_uri, SSL *conn_SSL)
 {
     int bytes_read = 0; //bytes read from local resource
@@ -633,7 +635,7 @@ void serve_static_content_from_disk(int client_fd, char *local_uri, SSL *conn_SS
 }
 
 
-//read data from cache and write to client socket pointed to by client_fd
+/*Read data from cache and write to client socket pointed to by client_fd*/
 void serve_static_content_from_cache(int client_fd, cache_file_t *f, SSL *conn_SSL)
 {
     size_t content_len = f->sz;
@@ -658,6 +660,7 @@ void serve_static_content_from_cache(int client_fd, cache_file_t *f, SSL *conn_S
 }
 
 
+/*Send error to client*/
 void http_send_error(int client_fd, int errcode, SSL *conn_SSL)
 {
     char err404[] = "HTTP/1.1 404 NOT FOUND\nContent-Type: text/html; charset=UTF-8\r\n\r\n404\nResource not found on server.\n";
@@ -686,13 +689,7 @@ void http_send_error(int client_fd, int errcode, SSL *conn_SSL)
 }
 
 
-/*load global configs
- *SITEPATH: physical path of website on disk
- *PORT: port to listen on (default 80)
- *HOME: default homepage
- *SSL_CERT_FILE_PEM: path of PEM file used for SSL that contains public key
- *SSL_KEY_FILE_PEM: path of PEM file used for SSL that contains private key
- */
+/*Load global configs, these configs will be visible to all child processes and threads*/
 int load_global_config()
 {
     char buf[4096];
@@ -774,6 +771,7 @@ int load_global_config()
 }
 
 
+/*Clean up and exit program*/
 void shutdown_server()
 {
     table_destroy(CACHE_TABLE, CACHE_TABLE_SIZE, 1);
