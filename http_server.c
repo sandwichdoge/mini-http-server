@@ -90,13 +90,13 @@ int main()
     switch (config_errno) {
         case -1:
             printf("Fatal error in http.conf: No PATH parameter specified.\n");
-            return -1;
+            return config_errno;
         case -2:
             printf("Fatal error in http.conf: Invalid PATH parameter.\n");
-            return -1;
+            return config_errno;
         case -3:
             printf("Fatal error: cannot open http.conf\n");
-            return -1;
+            return config_errno;
     }
 
     chdir(SITEPATH); //change working dir to physical path of site
@@ -105,7 +105,7 @@ int main()
     struct server_socket sock_ssl = create_server_socket(PORT_SSL);
     if (sock.fd < 0 || sock_ssl.fd < 0) {
         fprintf(stderr, "Error occurred during socket creation. Aborting.\n");
-        return -1;
+        return -4;
     }
 
     client_info args;
@@ -132,7 +132,7 @@ int main()
     pid_t pid = fork(); //1 process for HTTP, 1 for HTTPS
     if (pid == -1) {
         perror("FATAL: Cannot create child processes.");
-        return -1;
+        return -5;
     }
     else if (pid == 0) {
         args.is_ssl = 1;
