@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -lpthread -lssl -lcrypto -pthread
+CFLAGS = -lpthread -lssl -lcrypto -pthread -Wall
 
 current_dir = $(shell pwd)
 conf_demo_dir := PATH=$(current_dir)
@@ -30,22 +30,22 @@ config:
 
 
 http_server.o: http_server.c socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o casing.h str-utils/str-utils.o sysout.h
-	$(CC) -c -g http_server.c -o http_server.o
+	$(CC) -c -g http_server.c -o http_server.o $(CFLAGS)
 
 http-request.o: http-request.c http-request.h
-	$(CC) -c -g http-request.c
+	$(CC) -c -g http-request.c $(CFLAGS)
 
 fileops.o: fileops.c fileops.h
-	$(CC) -c -g fileops.c
+	$(CC) -c -g fileops.c $(CFLAGS)
 
 mime/http-mimes.o: mime/http-mimes.c mime/http-mimes.h
-	$(CC) -c mime/http-mimes.c -o mime/http-mimes.o
+	$(CC) -c mime/http-mimes.c -o mime/http-mimes.o $(CFLAGS)
 
 serversocket.o: socket/serversocket.c socket/serversocket.h
-	$(CC) -c socket/serversocket.c
+	$(CC) -c socket/serversocket.c $(CFLAGS)
 
 http-ssl.o: socket/http-ssl.c socket/http-ssl.h
-	$(CC) -c socket/http-ssl.c
+	$(CC) -c socket/http-ssl.c $(CFLAGS)
 
 str-utils.o: str-utils/str-utils.c str-utils/str-utils.h
 	$(CC) -c str-utils/str-utils.c

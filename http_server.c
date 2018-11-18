@@ -54,7 +54,7 @@ typedef struct env_vars_t {
 
 
 void *conn_handler(void *fd);
-void serve_static_content(int client_fd, char *local_uri, long content_len, SSL *conn_SSL);
+void serve_static_content(int client_fd, char *local_uri, SSL *conn_SSL);
 void http_send_error(int client_fd, int errcode, SSL *conn_SSL);
 int is_valid_method(char *method);
 int env_vars_init(env_vars_t *env, struct http_request *req);
@@ -189,7 +189,7 @@ void *conn_handler(void *vargs)
     if (client_fd < 0) {
         fprintf(stderr, "Error accepting incoming connections.\n");
     }
-    //printf("Connection established, fd:%d, thread:%d\n", client_fd, pthread_self()); fflush(stdout);
+    //printf("Connection established, fd:%d, thread:%ld\n", client_fd, pthread_self()); fflush(stdout);
 
 
     /*INITIALIZE SSL CONNECTION IF CONNECTED VIA HTTPS*/
@@ -437,7 +437,7 @@ void *conn_handler(void *vargs)
         }
 
         //send body data
-        serve_static_content(client_fd, local_uri, sz, conn_SSL);
+        serve_static_content(client_fd, local_uri, conn_SSL);
     }
     else { //error reading requested data or system can't interpret requested script
         http_send_error(client_fd, 500, conn_SSL);
@@ -478,7 +478,7 @@ int generate_header(char *header, char *body, char *mime_type, char *content_len
     lowercase(user_defined_header, buf, doc_begin - body);
 
 
-    strncpy(header, user_defined_header, sizeof(user_defined_header));
+    strncpy(header, user_defined_header, sizeof(user_defined_header) - 1);
 
     //define content-type if back-end does not
     char *cont_type = strstr(user_defined_header, "content-type: ");
@@ -548,9 +548,10 @@ int is_valid_method(char *method)
 
 
 //read local_uri and write to client socket pointed to by client_fd
-void serve_static_content(int client_fd, char *local_uri, long content_len, SSL *conn_SSL)
+void serve_static_content(int client_fd, char *local_uri, SSL *conn_SSL)
 {
     int bytes_read = 0; //bytes read from local resource
+    size_t content_len = file_get_size(local_uri);
     char response[4096]; //buffer
     FILE *content_fd = fopen(local_uri, "r"); //get requested file content
     if (!content_fd) {

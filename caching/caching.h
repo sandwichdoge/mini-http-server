@@ -28,5 +28,7 @@ cache_file_t* cache_file(char *path, cache_file_t **TABLE, int table_len)
 
         ret->next = NULL;
 
+        table_add(TABLE, table_len, ret);
+
         return ret;
 }

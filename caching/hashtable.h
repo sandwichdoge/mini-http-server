@@ -43,8 +43,8 @@ int table_destroy(cache_file_t **TABLE, int len, int free_node)
 static size_t hash(char *str, size_t max)
 {
         size_t sum = 0;
-        for (int i = 0; str[i]; ) { //optimized
-                sum += str[i] * (++i);
+        for (int i = 0; str[i]; i++) { //optimized
+                sum += str[i] * (i + 1);
         }
 
         return sum % max;
