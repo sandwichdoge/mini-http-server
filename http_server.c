@@ -17,7 +17,7 @@
  *ssl_connection = SSL_new(), ssl_set_fd() to link client_fd with ssl_connection
  *ssl_accept() to wait for client to initiate handshake, non-block I/O client_fd to implement timeout otherwise it'll hang on bad requests
  */
-
+//gcc -pg http_server.c http-request.c socket/serversocket.c socket/http-ssl.c mime/http-mimes.c fileops/fileops.c caching/caching.c caching/hashtable.c str-utils/str-utils.c -lpthread -lssl -lcrypto -pthread
 
 typedef struct client_info {
     struct server_socket server_socket;
@@ -129,7 +129,7 @@ void *conn_handler(void *vargs)
     int client_fd = 0;//args->client_fd;
     struct server_socket server_socket = args->server_socket;
     int is_ssl = args->is_ssl;
-    char buf[4096*2];
+    char buf[2048];
     char local_uri[2048];
     char decoded_uri[2048];
     char mime_type[128];
@@ -137,18 +137,19 @@ void *conn_handler(void *vargs)
     char content_len[16];
     long sz;
     char *body_old = NULL;
-
+    
     /*BIG LOOP HERE*/
     while (1) { //these declarations should be optimized by compiler anyway, it's ok to declare within loop
-
     int bytes_read = 0;
     int ssl_err = 0;
     int is_multipart = 0;
     char *request = NULL;
     char *_new_request;
+    struct http_request *req = NULL;
+
     SSL *conn_SSL = NULL;
 
-    //flush out buffers for security
+    //flush out buffers
     memset(buf, 0, sizeof(buf));
     memset(local_uri, 0, sizeof(local_uri));
     memset(decoded_uri, 0, sizeof(decoded_uri));
@@ -157,6 +158,7 @@ void *conn_handler(void *vargs)
     memset(content_len, 0, sizeof(content_len));
 
     client_fd = accept(server_socket.fd, (struct sockaddr*)server_socket.handle, &server_socket.len);
+
     if (client_fd < 0) {
         fprintf(stderr, "Error accepting incoming connections.\n");
     }
@@ -188,28 +190,29 @@ void *conn_handler(void *vargs)
         }
     }
 
-
     /*READ HTTP REQUEST FROM CLIENT (INCLUDE HEADER+BODY)*/
     /*read data via TCP stream, append new data to heap
-     *keep reading and allocating memory for new data until NULL or 20MB max reached
+     *keep reading and allocating memory for new data until NULL or max request len reached
      *finally pass it it down to process_request() to get info about it (uri, method, body data)
      *if buf[sizeof(buf)] != 0, there's still more data*/
     int n = 0;
     int c = 5; //counter to handle SSL_ERROR_WANT_READ, after 5 retries terminate conn and clean up
-    request = malloc(1); //request points to new data, must be freed during cleanup
+    request = calloc(1, 1); //request points to new data, must be freed during cleanup
     if (request == NULL) {
         fprintf(stderr, "Out of memory.\n");
         return NULL;
     }
 
     do {
+        //TODO: BOTTLENECK HERE
         if (is_ssl) { //https
             n = read_data_ssl(conn_SSL, buf, sizeof(buf));
         }
         else { //regular http without ssl
             n = read_data(client_fd, buf, sizeof(buf));
         }
-        if (n < 0) {
+
+        if (n < 0 && is_ssl) {
             ssl_err = SSL_get_error(conn_SSL, n);
             switch (ssl_err) {
                 case SSL_ERROR_WANT_READ:
@@ -238,7 +241,7 @@ void *conn_handler(void *vargs)
             fprintf(stderr, "Request size exceeds limit.\n");
             break;
         }
-    } while (buf[sizeof(buf)] != 0); //stop if request is larger than 20MB or reached NULL
+    } while (buf[sizeof(buf)-1] != 0); //stop if request is larger than limit or reached NULL
     
     if (bytes_read == 0) {
         fprintf(stdin, "Received empty request.\n"); fflush(stdin);
@@ -246,8 +249,8 @@ void *conn_handler(void *vargs)
     }
 
     /*PROCESS HEADER FROM CLIENT*/
-    struct http_request *req = process_request(request);
 
+    req = process_request(request);
 
     /*HANDLE MULTIPART FILE UPLOAD*/
     //IF total data read < Content-Length, keep reading
@@ -312,15 +315,15 @@ void *conn_handler(void *vargs)
         http_send_error(client_fd, 404, conn_SSL); //then send 404 to client
         goto cleanup;
     }
+    /*
     if (file_readable(local_uri) < 0) { //local resource isn't read-accessible
         fprintf(stderr, "Local resource is inaccessible.\n"); fflush(stderr);
         http_send_error(client_fd, 403, conn_SSL);  //then send 403 to client
         goto cleanup;
-    }
+    }*/
 
     //TODO: cookie, gzip content, handle other methods like PUT, HEAD, DELETE..
     
-
     /*SERVE DATA (EITHER STATIC PAGE OR INTERPRETED)*/
     //handle executable requests here
     char interpreter[1024]; //path of interpreter program
@@ -391,7 +394,6 @@ void *conn_handler(void *vargs)
 
         cleanup_data:
         free(data);
-        free(req);
     }
     else if(is_interpretable == 0) { //CASE 2: uri is a static page
         if (CACHING_ENABLED) { /*TRY TO GET CONTENT FROM CACHE*/
@@ -408,6 +410,7 @@ void *conn_handler(void *vargs)
 
             //generate header from cached media
             generate_header_static_from_cache(header, f);
+
             
             //send header
             if (is_ssl) {
@@ -434,20 +437,23 @@ void *conn_handler(void *vargs)
             //send body data
             serve_static_content_from_disk(client_fd, local_uri, conn_SSL);
         }
+
     }
     else { //error reading requested data or system can't interpret requested script
         http_send_error(client_fd, 500, conn_SSL);
     }
-    
+
     cleanup:
     //shutdown connection and free resources
     if (is_ssl) {
         int saved_flock = fcntl(client_fd, F_GETFL);
         fcntl(client_fd, F_SETFL, saved_flock & ~O_NONBLOCK);
     }
+    free(req);
     if (!ssl_err) free(request); //free() shouldn't do anything if pointer is NULL, but in multithreading it's funky, so check jic
     if (is_ssl && conn_SSL != NULL) disconnect_SSL(conn_SSL, ssl_err); //will call additional SSL_free() if there's error (ssl_err != 0)
     sock_cleanup(client_fd);
+
     }
 
     return NULL;
@@ -467,13 +473,17 @@ int generate_header(char *header, char *body, char *mime_type, char *content_len
     char *n; //this will store linebreak char
 
     doc_begin = strstr(body, "\n<html");
-    if (doc_begin == NULL) doc_begin = body; //send whatever backend prints to client anyway, alternatively return -1
+    if (doc_begin == NULL) {
+        doc_begin = body; //send whatever backend prints to client anyway, alternatively return -1
+        strncpy(buf, body, sizeof(buf) - 1);
+    }
+    else {
+        strncpy(buf, body, doc_begin - body);
+    }
 
-    strncpy(buf, body, doc_begin - body);
     lowercase(user_defined_header, buf, doc_begin - body);
 
-
-    strncpy(header, user_defined_header, sizeof(user_defined_header) - 1);
+    strcpy(header, user_defined_header);
 
     //define content-type if back-end does not
     char *cont_type = strstr(user_defined_header, "content-type: ");
@@ -722,7 +732,7 @@ int load_global_config()
     s = strstr(buf, "CACHING_ENABLED=");
     if (s == NULL) CACHING_ENABLED = 1; //no config, use 1
     s += strlen("CACHING_ENABLED="); //len of "MAX_THREADS="
-    MAX_THREADS = atoi(s);
+    CACHING_ENABLED = atoi(s);
 
     //other configs below
 
