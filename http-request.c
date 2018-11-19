@@ -20,6 +20,8 @@ struct http_request *process_request(char *request)
     ret->query_str = NULL;
     ret->body_len = 0;
 
+    if (request == NULL) return NULL;
+
     //method; method_len = len of method string
     for (; request[method_len] != ' ' && method_len <= sizeof(ret->method); ++method_len);
     memcpy(ret->method, request, method_len);

@@ -251,6 +251,7 @@ void *conn_handler(void *vargs)
     /*PROCESS HEADER FROM CLIENT*/
 
     req = process_request(request);
+    if (req == NULL) goto cleanup;
 
     /*HANDLE MULTIPART FILE UPLOAD*/
     //IF total data read < Content-Length, keep reading
@@ -355,7 +356,7 @@ void *conn_handler(void *vargs)
         if (ret_code < 0) { //if there's error in backend script, send err500 and skip sending returned data
             fprintf(stderr, "Internal error, code %d!", ret_code); fflush(stderr);
             http_send_error(client_fd, 500, conn_SSL);
-            goto cleanup_data;
+            goto cleanup_output;
         }
 
         /*trim header parts from body*/
@@ -376,7 +377,7 @@ void *conn_handler(void *vargs)
         //now we generate header based on data returned from interpreter program
         if (generate_header(header, data, mime_type, content_len) < 0) {
             http_send_error(client_fd, 500, conn_SSL);
-            goto cleanup_data;
+            goto cleanup_output;
         }
         
 
@@ -392,7 +393,7 @@ void *conn_handler(void *vargs)
             }
         }
 
-        cleanup_data:
+        cleanup_output:
         free(data);
     }
     else if(is_interpretable == 0) { //CASE 2: uri is a static page
