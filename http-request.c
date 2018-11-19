@@ -9,6 +9,7 @@ struct http_request *process_request(char *request)
     int uri_len = 0;
     int is_GET_with_params = 0;
     char *n; //this will contain linebreak char
+    
     /*HEADER SECTION*/
     memset(ret->URI, 0, sizeof(ret->URI));
     memset(ret->method, 0, sizeof(ret->method));
