@@ -7,6 +7,7 @@ cache_file_t** table_create(int len)
 
 
 /*Hash key/filename to gain index no*/
+/*
 static size_t hash(char *str, size_t max)
 {
         size_t sum = 0;
@@ -15,6 +16,21 @@ static size_t hash(char *str, size_t max)
         }
 
         return sum % max;
+}*/
+
+
+/*Hash key/filename to gain index no*/
+static size_t hashFNV(char *str, size_t max)
+{
+        size_t FNV_offset_basis = 0xcbf29ce484222325;
+        size_t FNV_prime = 0x100000001b3;
+
+        for (int i = 0; str[i]; i++) { //optimized
+                FNV_offset_basis *= str[i] * FNV_prime;
+                FNV_offset_basis ^= str[i];
+        }
+
+        return FNV_offset_basis % max;
 }
 
 
@@ -43,7 +59,7 @@ int table_destroy(cache_file_t **TABLE, int len, int free_node)
 /*find node in table based on key string*/
 cache_file_t* table_find(cache_file_t **TABLE, int table_len, char *key)
 {
-        size_t hkey = hash(key, table_len);
+        size_t hkey = hashFNV(key, table_len);
         cache_file_t *node = TABLE[hkey];
 
         while (node != NULL) {
@@ -61,7 +77,7 @@ cache_file_t* table_find(cache_file_t **TABLE, int table_len, char *key)
 /*Add node into table*/
 int table_add(cache_file_t **TABLE, int table_len, cache_file_t *node)
 {
-        size_t hkey = hash(node->fname, table_len);
+        size_t hkey = hashFNV(node->fname, table_len);
 
         cache_file_t *head = TABLE[hkey];
         if (head == NULL) {
@@ -81,7 +97,7 @@ int table_del_node(cache_file_t **TABLE, int table_len, char *key)
 {
         cache_file_t *f = table_find(TABLE, table_len, key);
         cache_file_t *next = f->next;
-        size_t hkey = hash(key, table_len);
+        size_t hkey = hashFNV(key, table_len);
 
         if (f == NULL) return -1; //node with key not found
 

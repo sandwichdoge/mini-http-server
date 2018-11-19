@@ -49,10 +49,10 @@ int read_data(int client_fd, char *buf, size_t bufsize)
 int send_data(int client_fd, char *data, size_t len)
 {
     int bytes_written = 0;
-    while (bytes_written < len) { //handle partial write in case of traffic congestion
+    do {
         bytes_written += write(client_fd, data, len - bytes_written); //send tcp response
         if (bytes_written < 0) break; //error sending data to client
-    }
+    } while (bytes_written < len); //handle partial write in case of traffic congestion
 
     return bytes_written;
 }
