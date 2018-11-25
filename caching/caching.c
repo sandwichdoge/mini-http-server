@@ -11,10 +11,10 @@ cache_file_t* cache_add_file(char *path)
         size_t filesz = file_get_size(path);
         if (filesz == 0) return NULL; //can't open file
         ret->addr = (char*)malloc(filesz);
-        ret->fname = (char*)malloc(strlen(path)+1);
-        if (ret->addr == NULL || ret->fname == NULL) return NULL; //out of memory
+        ret->key = (char*)malloc(strlen(path)+1);
+        if (ret->addr == NULL || ret->key == NULL) return NULL; //out of memory
 
-        strcpy(ret->fname, path);
+        strcpy(ret->key, path);
 
         FILE *fd = fopen(path, "r");
         fread(ret->addr, 1, filesz, fd);
@@ -34,7 +34,7 @@ cache_file_t* cache_add_file(char *path)
 int cache_remove_file(cache_file_t *f)
 {
         free(f->addr);
-        free(f->fname);
+        free(f->key);
         free(f);
 
         return 0;

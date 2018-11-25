@@ -22,6 +22,11 @@ int file_executable(char *path)
     return access(path, X_OK);
 }
 
+inline char *file_get_ext(char *path)
+{
+    return strrchr(path, '.');
+}
+
 /*return path to interpreter in *out buffer.
 *return code:
 *0: file is not interpretable
@@ -30,6 +35,9 @@ int file_executable(char *path)
 *-2: interpretable file but interpreter does not exist on system*/
 int file_get_interpreter(char *path, char *out, size_t sz)
 {
+    //TODO: read from global config which interpreter to use first, then look in 1st line of script if none found
+    char *ext = file_get_ext(path);
+
     char buf[1024] = "";
     FILE *fd = fopen(path, "r"); if (!fd) return -1;
     if (fread(buf, 1, sizeof(buf), fd) == 0) return -1;

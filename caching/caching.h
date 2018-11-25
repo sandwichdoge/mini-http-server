@@ -5,7 +5,7 @@
 #include "../fileops/fileops.h"
 
 typedef struct cache_file_t {
-        char *fname;
+        char *key; //file name in this case
         size_t sz;
         void *addr;
         time_t last_accessed;
@@ -17,7 +17,7 @@ cache_file_t** table_create(int len);
 cache_file_t* table_find(cache_file_t **TABLE, int table_len, char *key);
 int table_add(cache_file_t **TABLE, int table_len, cache_file_t *node);
 int table_destroy(cache_file_t **TABLE, int len, int free_node);
-int table_del_node(cache_file_t **TABLE, int table_len, char *key);
+int table_del_node(cache_file_t **TABLE, int table_len, char *key, void (*free_func)(void*));
 
 /*Cache file into memory.
  *Return address of file content buffer, file size and filename

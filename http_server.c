@@ -408,6 +408,7 @@ void *conn_handler(void *vargs)
                 }
                 table_add(args->cache_table, args->cache_table_len, f);
             }
+            time(&f->last_accessed); //update last accessed to current time.
 
             //generate header from cached media
             generate_header_static_from_cache(header, f);
@@ -547,7 +548,7 @@ int generate_header_static_from_cache(char *header, cache_file_t *f)
     char content_len [16] = "";
     char mime_type[128] = "";
 
-    get_mime_type(mime_type, f->fname); //MIME type for response header
+    get_mime_type(mime_type, f->key); //MIME type for response header
 
     sprintf(content_len, "%ld", f->sz);
 

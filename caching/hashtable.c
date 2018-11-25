@@ -42,7 +42,7 @@ int table_destroy(cache_file_t **TABLE, int len, int free_node)
         for (int i = 0; i < len; i++) {
                 head= TABLE[i];
                 while (head != NULL) {
-                        free(head->fname);
+                        free(head->key);
                         free(head->addr);
                         prev = head;
                         head = head->next;
@@ -63,11 +63,12 @@ cache_file_t* table_find(cache_file_t **TABLE, int table_len, char *key)
         cache_file_t *node = TABLE[hkey];
 
         while (node != NULL) {
-                if (strcmp(node->fname, key) == 0) {
-                        time(&node->last_accessed);
+                if (strcmp(node->key, key) == 0) {
                         return node;
                 }
-                node = node->next;
+                else {
+                        node = node->next;
+                }
         }
 
         return NULL;
@@ -77,7 +78,7 @@ cache_file_t* table_find(cache_file_t **TABLE, int table_len, char *key)
 /*Add node into table*/
 int table_add(cache_file_t **TABLE, int table_len, cache_file_t *node)
 {
-        size_t hkey = hashFNV(node->fname, table_len);
+        size_t hkey = hashFNV(node->key, table_len);
 
         cache_file_t *head = TABLE[hkey];
         if (head == NULL) {
@@ -93,26 +94,30 @@ int table_add(cache_file_t **TABLE, int table_len, cache_file_t *node)
 }
 
 
-int table_del_node(cache_file_t **TABLE, int table_len, char *key)
+//free_func: function to be called on node to free up node resource
+int table_del_node(cache_file_t **TABLE, int table_len, char *key, void (*free_func)(void*))
 {
         cache_file_t *f = table_find(TABLE, table_len, key);
-        cache_file_t *next = f->next;
-        size_t hkey = hashFNV(key, table_len);
-
         if (f == NULL) return -1; //node with key not found
 
-        if (next) { //copy value of next node into current node, free next node
-                f->addr = next->addr;
-                f->fname = next->fname;
-                f->last_accessed = next->last_accessed;
-                f->sz = next->sz;
-                f->next = next->next;
-                cache_remove_file(next);
-        }
-        else { //found node is the only one of its line
-                cache_remove_file(f);
-                TABLE[hkey] = NULL;
+        size_t hkey = hashFNV(key, table_len);
+
+        int count = 0;
+        cache_file_t *prev = f; 
+        while (strcmp(key, f->key) != 0) { //traverse linked list until keys match
+                prev = f;
+                f = f->next;
+                count++;
         }
 
+        if (count == 0) { //match on first node
+                free_func(f);
+                TABLE[hkey] = NULL;
+        }
+        else { //hash collision, match on inner nodes
+                prev->next = f->next;
+                free_func(f);
+        }
+        
         return 0;
 }
