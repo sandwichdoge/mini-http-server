@@ -36,7 +36,7 @@ inline char *file_get_ext(char *path)
 int file_get_interpreter(char *path, char *out, size_t sz)
 {
     //TODO: read from global config which interpreter to use first, then look in 1st line of script if none found
-    char *ext = file_get_ext(path);
+    //char *ext = file_get_ext(path);
 
     char buf[1024] = "";
     FILE *fd = fopen(path, "r"); if (!fd) return -1;

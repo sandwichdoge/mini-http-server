@@ -41,7 +41,6 @@ cache_file_t **CACHE_TABLE;       //cache table
 SSL_CTX *CTX;                              //SSL cert
 
 
-
 int main()
 {
     int config_errno = load_global_config();
@@ -100,7 +99,7 @@ int main()
         args.is_ssl = 0;
         args.server_socket = sock;
     }
-    CACHE_TABLE = table_create(CACHE_TABLE_SIZE);
+    CACHE_TABLE = (cache_file_t**)table_create(CACHE_TABLE_SIZE);
     args.cache_table = CACHE_TABLE;
     args.cache_table_len = CACHE_TABLE_SIZE;
 
@@ -398,7 +397,7 @@ void *conn_handler(void *vargs)
     }
     else if(is_interpretable == 0) { //CASE 2: uri is a static page
         if (CACHING_ENABLED) { /*TRY TO GET CONTENT FROM CACHE*/
-            cache_file_t *f = table_find(args->cache_table, args->cache_table_len, local_uri);
+            cache_file_t *f = (cache_file_t*)table_find((void**)args->cache_table, args->cache_table_len, local_uri);
             if (f == NULL) {  //file is not cached, cache it to memory and cache table
                 f = cache_add_file(local_uri);
                 if (f == NULL) {
@@ -406,7 +405,7 @@ void *conn_handler(void *vargs)
                     http_send_error(client_fd, 500, conn_SSL); //go back and send data from disk instead?
                     goto cleanup;
                 }
-                table_add(args->cache_table, args->cache_table_len, f);
+                table_add((void**)args->cache_table, args->cache_table_len, f);
             }
             time(&f->last_accessed); //update last accessed to current time.
 
@@ -745,7 +744,7 @@ int load_global_config()
 /*Clean up and exit program*/
 void shutdown_server()
 {
-    table_destroy(CACHE_TABLE, CACHE_TABLE_SIZE, 1);
+    table_destroy((void**)CACHE_TABLE, CACHE_TABLE_SIZE, cache_remove_file);
     shutdown_SSL();
     printf("Server stopped.\n");
     exit(0);
