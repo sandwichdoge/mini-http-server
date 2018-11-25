@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -g -lpthread -lssl -lcrypto -pthread -Wall -Ofast -march=native
+CFLAGS = -lpthread -lssl -lcrypto -pthread -Wall -Ofast -march=native
 
 current_dir = $(shell pwd)
 conf_demo_dir := PATH=$(current_dir)
@@ -48,13 +48,13 @@ http-ssl.o: socket/http-ssl.c socket/http-ssl.h
 	$(CC) -c socket/http-ssl.c $(CFLAGS)
 
 str-utils.o: str-utils/str-utils.c str-utils/str-utils.h
-	$(CC) -c str-utils/str-utils.c
+	$(CC) -c str-utils/str-utils.c $(CFLAGS)
 
 caching.o: caching/caching.c caching/caching.h caching/hashtable.o
-	$(CC) -c -g caching/caching.c $(CFLAGS)
+	$(CC) -c caching/caching.c $(CFLAGS)
 
-hashtable.o: caching/hashtable.c
-	$(CC) -c -g caching/hashtable.c $(CFLAGS)
+hashtable.o: caching/hashtable.c caching/hashtable.h
+	$(CC) -c caching/hashtable.c $(CFLAGS)
 
 ssl-ca:
 	openssl req -newkey rsa:2048 -nodes -keyout key.pem -x509 -days 365 -out certificate.pem
