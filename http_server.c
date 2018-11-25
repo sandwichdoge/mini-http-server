@@ -397,7 +397,7 @@ void *conn_handler(void *vargs)
     }
     else if(is_interpretable == 0) { //CASE 2: uri is a static page
         if (CACHING_ENABLED) { /*TRY TO GET CONTENT FROM CACHE*/
-            cache_file_t *f = (cache_file_t*)table_find((void**)args->cache_table, args->cache_table_len, local_uri);
+            list_head_t *f = table_find((void**)args->cache_table, args->cache_table_len, local_uri);
             if (f == NULL) {  //file is not cached, cache it to memory and cache table
                 f = cache_add_file(local_uri);
                 if (f == NULL) {
@@ -407,10 +407,13 @@ void *conn_handler(void *vargs)
                 }
                 table_add((void**)args->cache_table, args->cache_table_len, f);
             }
-            time(&f->last_accessed); //update last accessed to current time.
+
+            //update node's last_accessed to current time.
+            cache_file_t *p = (cache_file_t*)f->parent;
+            time(&p->last_accessed); 
 
             //generate header from cached media
-            generate_header_static_from_cache(header, f);
+            generate_header_static_from_cache(header, (cache_file_t*)f->parent);
 
             
             //send header
@@ -421,7 +424,7 @@ void *conn_handler(void *vargs)
                 send_data(client_fd, header, strlen(header));
             }
             //send body data
-            serve_static_content_from_cache(client_fd, f, conn_SSL);
+            serve_static_content_from_cache(client_fd, (cache_file_t*)f->parent, conn_SSL);
         }
         else { /*READ CONTENT FROM DISK AND SERVE IT*/
             //generate header for static media
@@ -547,7 +550,7 @@ int generate_header_static_from_cache(char *header, cache_file_t *f)
     char content_len [16] = "";
     char mime_type[128] = "";
 
-    get_mime_type(mime_type, f->key); //MIME type for response header
+    get_mime_type(mime_type, f->fname); //MIME type for response header
 
     sprintf(content_len, "%ld", f->sz);
 
