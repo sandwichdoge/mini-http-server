@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include "hashtable.h"
+#include "../hashtable/hashtable.h"
 #include "../fileops/fileops.h"
 
 
