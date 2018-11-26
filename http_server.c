@@ -30,6 +30,7 @@ typedef struct client_info {
 
 int main()
 {
+    /*Load configs*/
     int config_errno = load_global_config();
     switch (config_errno) {
         case -1:
@@ -45,6 +46,7 @@ int main()
 
     chdir(SITEPATH); //change working dir to physical path of site
 
+    /*Create sockets*/
     struct server_socket sock = create_server_socket(PORT);
     struct server_socket sock_ssl = create_server_socket(PORT_SSL);
     if (sock.fd < 0 || sock_ssl.fd < 0) {
@@ -55,7 +57,7 @@ int main()
     client_info args;
     pthread_t pthread[MAX_THREADS/2];
 
-
+    /*Initialize SSL cert*/
     initialize_SSL();
     CTX = SSL_CTX_new(TLS_server_method());
     if (!CTX) {
@@ -71,6 +73,7 @@ int main()
     }
     
 
+    /*Start server*/
     printf("Started HTTP server on port %d and %d..\n", PORT, PORT_SSL);
 
     pid_t pid = fork(); //1 process for HTTP, 1 for HTTPS
@@ -91,6 +94,7 @@ int main()
     args.cache_table_len = CACHE_TABLE_SIZE;
 
     signal(SIGINT, shutdown_server);
+    signal(SIGTERM, shutdown_server);
     signal(SIGPIPE, SIG_IGN); //handle premature termination of connection from client
 
     /*CREATE n CHILD THREADS, n/2 FOR HTTP AND n/2 FOR HTTPS*/
@@ -659,7 +663,7 @@ int file_get_interpreter(char *path, char *out, size_t sz)
 {
     //TODO: read from global config which interpreter to use first, then look in 1st line of script if none found
     char *ext = file_get_ext(path);
-    list_head_t *h = table_find(INTER_TABLE, INTER_TABLE_SZ, ext);
+    list_head_t *h = table_find((void**)INTER_TABLE, INTER_TABLE_SZ, ext);
     if (h != NULL) {
         interpreter_t *it = h->parent;
         strcpy(out, it->path);
@@ -687,7 +691,7 @@ int file_get_interpreter(char *path, char *out, size_t sz)
 void shutdown_server()
 {
     table_destroy((void**)CACHE_TABLE, CACHE_TABLE_SIZE, cache_remove_file);
-    table_destroy(INTER_TABLE, INTER_TABLE_SZ, remove_interpreter);
+    table_destroy((void**)INTER_TABLE, INTER_TABLE_SZ, remove_interpreter);
     shutdown_SSL();
     printf("Server stopped.\n");
     exit(0);
