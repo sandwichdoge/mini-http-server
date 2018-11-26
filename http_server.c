@@ -687,6 +687,7 @@ int file_get_interpreter(char *path, char *out, size_t sz)
 void shutdown_server()
 {
     table_destroy((void**)CACHE_TABLE, CACHE_TABLE_SIZE, cache_remove_file);
+    table_destroy(INTER_TABLE, INTER_TABLE_SZ, remove_interpreter);
     shutdown_SSL();
     printf("Server stopped.\n");
     exit(0);
