@@ -33,7 +33,7 @@ int table_destroy(void **TABLE, int len, void (*free_func)(list_head_t*))
         for (int i = 0; i < len; i++) {
                 head= TABLE[i];
                 while (head != NULL) {
-                        free_func(head);
+                        if (free_func) free_func(head);
                         prev = head;
                         head = head->next;
                         free(prev);

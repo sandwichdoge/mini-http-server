@@ -12,4 +12,10 @@ char *strchrln(char *str, char c);
 /*strip trailing CRLF*/
 int strip_trailing_lf(char *str, int how_many);
 
+/*copy str between l and r to out buffer*/
+char *str_between(char *out, char *str, char l, char r);
+
+/*count chars in str*/
+int chr_count(char *str, char c);
+
 #endif

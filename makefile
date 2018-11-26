@@ -29,7 +29,7 @@ config:
 
 
 
-http_server.o: http_server.c socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o str-utils/casing.h str-utils/str-utils.o caching/caching.o hashtable/hashtable.o sysout.h
+http_server.o: http_server.c socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o str-utils/casing.h str-utils/str-utils.o caching/caching.o hashtable/hashtable.o sysout.h global-config.h
 	$(CC) -c http_server.c -o http_server.o $(CFLAGS)
 
 http-request.o: http-request.c http-request.h

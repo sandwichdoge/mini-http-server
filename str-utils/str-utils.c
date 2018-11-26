@@ -39,3 +39,25 @@ int strip_trailing_lf(char *str, int how_many)
     
     return 0;
 }
+
+
+char* str_between(char *out, char *str, char l, char r)
+{
+    char *L = strchr(str, l);
+    char *R = strchr(str, r);
+    if (L == NULL || R == NULL) return NULL; //can't find one of 2 chars
+
+    strncpy(out, L+1, R - L - 1);
+
+    return R;
+}
+
+
+int chr_count(char *str, char c)
+{
+    int ret = 0;
+    for (int i = 0; str[i]; i++) {
+        if (str[i] == c) ret++;
+    }
+    return ret;
+}

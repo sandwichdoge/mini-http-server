@@ -27,19 +27,6 @@ typedef struct client_info {
 } client_info;
 
 
-/*Global variables*/
-char SITEPATH[1024] = "";            //physical path of website on disk
-int SITEPATH_LEN = 0;                  //len of SITEPATH
-char HOMEPAGE[512] = "";           //default index page
-char CERT_PUB_KEY_FILE[1024];  //pem file cert
-char CERT_PRIV_KEY_FILE[1024]; //pem file cert
-int PORT = 80;                              //default port 80
-int PORT_SSL = 443;                     //default port for SSL is 443
-int MAX_THREADS = 1024;            //maximum number of threads
-int CACHING_ENABLED = 1;          //enable server-side caching
-cache_file_t **CACHE_TABLE;       //cache table
-SSL_CTX *CTX;                              //SSL cert
-
 
 int main()
 {
@@ -326,7 +313,7 @@ void *conn_handler(void *vargs)
     
     /*SERVE DATA (EITHER STATIC PAGE OR INTERPRETED)*/
     //handle executable requests here
-    char interpreter[1024]; //path of interpreter program
+    char interpreter[1024] = ""; //path of interpreter program
     int is_interpretable = file_get_interpreter(local_uri, interpreter, sizeof(interpreter));
     if (is_interpretable > 0) { //CASE 1: uri is an executable file
 
@@ -662,86 +649,38 @@ void http_send_error(int client_fd, int errcode, SSL *conn_SSL)
 }
 
 
-/*Load global configs, these configs will be visible to all child processes and threads*/
-int load_global_config()
+/*return path to interpreter in *out buffer.
+*return code:
+*0: file is not interpretable
+*1: file is interpretable and interpreter exists on system
+*-1: error reading file
+*-2: interpretable file but interpreter does not exist on system*/
+int file_get_interpreter(char *path, char *out, size_t sz)
 {
-    char buf[4096];
-    char *s;
-    char *lnbreak;
+    //TODO: read from global config which interpreter to use first, then look in 1st line of script if none found
+    char *ext = file_get_ext(path);
+    list_head_t *h = table_find(INTER_TABLE, INTER_TABLE_SZ, ext);
+    if (h != NULL) {
+        interpreter_t *it = h->parent;
+        strcpy(out, it->path);
+    }
+    else {
+        char buf[1024] = "";
+        FILE *fd = fopen(path, "r"); if (!fd) return -1;
+        if (fread(buf, 1, sizeof(buf), fd) == 0) return -1;
+        fclose(fd);
 
-    int fd = open("http.conf", O_RDONLY);
-    if (fd < 0) return -3; //could not open http.conf
-    read(fd, buf, sizeof(buf)); //read http.conf file into buf
+        if (buf[0] != '#' || buf[1] != '!') return 0; //file is not for interpreting
+        for (int i = 0; buf[i+2] != '\n' && i < sz; ++i) {
+            out[i] = buf[i+2];
+        }
+    }    
     
-    //SITEPATH: physical path of website
-    s = strstr(buf, "PATH=");
-    lnbreak = strstr(s, "\n");
-    if (s == NULL) return -1; //no PATH config
-    s += 5; //len of "PATH="
-    memcpy(SITEPATH, s, lnbreak - s);
-    if (!is_dir(SITEPATH)) return -2; //invalid SITEPATH
-    SITEPATH_LEN = strnlen(SITEPATH, sizeof(SITEPATH));
-
-    //PORT: port to listen on (default 80)
-    s = strstr(buf, "PORT=");
-    if (s == NULL) PORT = 80; //no PORT config, use default 80
-    s += 5; //len of "PORT="
-    PORT = atoi(s);
-
-    //PORT for SSL (default 443)
-    s = strstr(buf, "PORT_SSL=");
-    if (s == NULL) PORT_SSL = 443; //no PORT config, use default 80
-    s += 9; //len of "PORT_SSL="
-    PORT_SSL = atoi(s);
-
-    //HOMEPAGE: default index page
-    s = strstr(buf, "HOME=");
-    if (s == NULL) {
-        strcpy(HOMEPAGE, "/index.html");
-    }
-    else {
-        lnbreak = strstr(s, "\n");
-        s += 5;
-        memcpy(HOMEPAGE, s, lnbreak - s);
-    }
+    if (file_executable(out) < 0) return -2; //no such interpreter on system
     
-    //SSL stuff
-    s = strstr(buf, "SSL_CERT_FILE_PEM="); //public key file path
-    if (s == NULL) {
-        CERT_PUB_KEY_FILE[0] = 0;
-    }
-    else {
-        lnbreak = strstr(s, "\n");
-        s += 18; // len of "SSL_CERT_FILE_PEM="
-        memcpy(CERT_PUB_KEY_FILE, s, lnbreak - s);
-    }
-
-    s = strstr(buf, "SSL_KEY_FILE_PEM="); //private key file path
-    if (s == NULL) {
-        CERT_PRIV_KEY_FILE[0] = 0;
-    }
-    else {
-        lnbreak = strstr(s, "\n");
-        s += 17; // len of "SSL_KEY_FILE_PEM="
-        memcpy(CERT_PRIV_KEY_FILE, s, lnbreak - s);
-    }
-
-    //MAX_THREADS: maximum number of concurrent threads
-    s = strstr(buf, "MAX_THREADS=");
-    if (s == NULL) MAX_THREADS = 1024; //no config, use 1024
-    s += strlen("MAX_THREADS="); //len of "MAX_THREADS="
-    MAX_THREADS = atoi(s);
-
-    //CACHING_ENABLED: enable server-side caching of static media
-    s = strstr(buf, "CACHING_ENABLED=");
-    if (s == NULL) CACHING_ENABLED = 1; //no config, use 1
-    s += strlen("CACHING_ENABLED="); //len of "MAX_THREADS="
-    CACHING_ENABLED = atoi(s);
-
-    //other configs below
-
-    return 0;
+    return 1;
 }
+
 
 
 /*Clean up and exit program*/
