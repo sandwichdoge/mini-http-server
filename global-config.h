@@ -18,7 +18,7 @@ int PORT = 80;                              //default port 80
 int PORT_SSL = 443;                     //default port for SSL is 443
 int MAX_THREADS = 1024;            //maximum number of threads
 int CACHING_ENABLED = 1;          //enable server-side caching
-void **INTER_TABLE;                    //interpreter table
+interpreter_t **INTER_TABLE;                    //interpreter table
 cache_file_t **CACHE_TABLE;       //cache table
 SSL_CTX *CTX;                              //SSL cert
 
@@ -135,7 +135,7 @@ int load_global_config()
     char *interp_conf = p;
     char ext[8];
     char inter[4096];
-    INTER_TABLE = table_create(INTER_TABLE_SZ);
+    INTER_TABLE = (interpreter_t**)table_create(INTER_TABLE_SZ);
     s = strstr(buf, "INTERPRETERS="); //public key file path
     if (s) {
         lnbreak = strstr(s, "\n");
@@ -151,7 +151,7 @@ int load_global_config()
         interp_conf = str_between(inter, interp_conf, ':', '}');
 
         list_head_t *head = new_interpreter(ext, inter);
-        table_add(INTER_TABLE, INTER_TABLE_SZ, head);
+        table_add((void**)INTER_TABLE, INTER_TABLE_SZ, head);
     }
 
     //other configs below
