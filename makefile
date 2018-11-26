@@ -11,6 +11,8 @@ conf_ssl_cert_file_pem := SSL_CERT_FILE_PEM=$(current_dir)/certificate.pem
 conf_ssl_key_file_pem := SSL_KEY_FILE_PEM=$(current_dir)/key.pem
 conf_max_threads := MAX_THREADS=1024
 conf_caching := CACHING_ENABLED=1
+conf_interp := INTERPRETERS={.py:/usr/bin/python},{.php:/usr/bin/php}
+
 
 all: http_server.o socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o str-utils/str-utils.o caching/caching.o hashtable/hashtable.o
 	$(CC) http_server.o socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o str-utils/str-utils.o caching/caching.o hashtable/hashtable.o $(CFLAGS) -o start-server
@@ -26,6 +28,7 @@ config:
 	@echo $(conf_ssl_key_file_pem) >> http.conf
 	@echo $(conf_max_threads) >> http.conf
 	@echo $(conf_caching) >> http.conf
+	@echo $(conf_interp) >> http.conf
 
 
 
