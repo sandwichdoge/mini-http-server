@@ -3,39 +3,42 @@
 /*Cache file into memory.
  *Return address of file content buffer, file size and filename
  *Everything is stored on the heap*/
-cache_file_t* cache_add_file(char *path)
+list_head_t* cache_add_file(char *path)
 {
-        cache_file_t *ret = (cache_file_t*)malloc(sizeof(cache_file_t));
-        if (ret == NULL) return NULL;
+        cache_file_t *parent = malloc(sizeof(cache_file_t));
+        if (parent == NULL) return NULL; //Out of memory
 
         size_t filesz = file_get_size(path);
         if (filesz == 0) return NULL; //can't open file
-        ret->addr = (char*)malloc(filesz);
-        ret->fname = (char*)malloc(strlen(path)+1);
-        if (ret->addr == NULL || ret->fname == NULL) return NULL; //out of memory
 
-        strcpy(ret->fname, path);
+        parent->addr = (char*)malloc(filesz);
+        parent->fname = (char*)malloc(strlen(path)+1);
+        if (parent->addr == NULL || parent->fname == NULL) return NULL; //out of memory
+
+        strcpy(parent->fname, path);
 
         FILE *fd = fopen(path, "r");
-        fread(ret->addr, 1, filesz, fd);
+        fread(parent->addr, 1, filesz, fd);
         fclose(fd);
 
-        ret->sz = filesz;
+        parent->sz = filesz;
 
-        time(&ret->last_accessed);
+        time(&parent->last_accessed);
 
-        ret->next = NULL;
+        /*init list_head_t struct for generic linked list*/
+        parent->HEAD.key = parent->fname;
+        parent->HEAD.parent = parent;
+        parent->HEAD.next = NULL;
 
-        return ret;
+        return &parent->HEAD;
 }
 
 
-/*Remove file from memory buffer*/
-int cache_remove_file(cache_file_t *f)
+/*Remove file from memory buffer without freeing f*/
+void cache_remove_file(list_head_t *fh)
 {
+        cache_file_t *f = fh->parent;
         free(f->addr);
         free(f->fname);
-        free(f);
 
-        return 0;
 }

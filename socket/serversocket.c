@@ -20,7 +20,7 @@ struct server_socket create_server_socket(int port)
     
     err = bind(fd, (struct sockaddr*)&server, sizeof(server));
     if (err < 0) {
-        fprintf(stderr, "Error binding. Requires SU privileges if port < 1024.\n");
+        fprintf(stderr, "Error binding. Requires SU privileges if port < 1024. Or is port busy?\n");
         fd = -1;
     }
 

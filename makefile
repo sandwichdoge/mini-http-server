@@ -11,9 +11,11 @@ conf_ssl_cert_file_pem := SSL_CERT_FILE_PEM=$(current_dir)/certificate.pem
 conf_ssl_key_file_pem := SSL_KEY_FILE_PEM=$(current_dir)/key.pem
 conf_max_threads := MAX_THREADS=1024
 conf_caching := CACHING_ENABLED=1
+conf_interp := INTERPRETERS={.py:/usr/bin/python},{.php:/usr/bin/php}
 
-all: http_server.o socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o str-utils/str-utils.o caching/caching.o caching/hashtable.o
-	$(CC) http_server.o socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o str-utils/str-utils.o caching/caching.o caching/hashtable.o $(CFLAGS) -o start-server
+
+all: http_server.o socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o str-utils/str-utils.o caching/caching.o hashtable/hashtable.o
+	$(CC) http_server.o socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o str-utils/str-utils.o caching/caching.o hashtable/hashtable.o $(CFLAGS) -o start-server
 	
 config:
 	@echo GENERATING CONFIGS..
@@ -26,10 +28,11 @@ config:
 	@echo $(conf_ssl_key_file_pem) >> http.conf
 	@echo $(conf_max_threads) >> http.conf
 	@echo $(conf_caching) >> http.conf
+	@echo $(conf_interp) >> http.conf
 
 
 
-http_server.o: http_server.c socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o str-utils/casing.h str-utils/str-utils.o caching/caching.o caching/hashtable.o sysout.h
+http_server.o: http_server.c socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o str-utils/casing.h str-utils/str-utils.o caching/caching.o hashtable/hashtable.o sysout.h global-config.h
 	$(CC) -c http_server.c -o http_server.o $(CFLAGS)
 
 http-request.o: http-request.c http-request.h
@@ -48,13 +51,13 @@ http-ssl.o: socket/http-ssl.c socket/http-ssl.h
 	$(CC) -c socket/http-ssl.c $(CFLAGS)
 
 str-utils.o: str-utils/str-utils.c str-utils/str-utils.h
-	$(CC) -c str-utils/str-utils.c
+	$(CC) -c str-utils/str-utils.c $(CFLAGS)
 
 caching.o: caching/caching.c caching/caching.h caching/hashtable.o
-	$(CC) -c -g caching/caching.c $(CFLAGS)
+	$(CC) -c caching/caching.c $(CFLAGS)
 
-hashtable.o: caching/hashtable.c
-	$(CC) -c -g caching/hashtable.c $(CFLAGS)
+hashtable.o: hashtable/hashtable.c hashtable/hashtable.h
+	$(CC) -c caching/hashtable.c $(CFLAGS)
 
 ssl-ca:
 	openssl req -newkey rsa:2048 -nodes -keyout key.pem -x509 -days 365 -out certificate.pem
@@ -63,4 +66,4 @@ ssl-ca:
 
 
 clean:
-	rm socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o str-utils/str-utils.o http_server.o caching/*.o
+	rm socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o str-utils/str-utils.o http_server.o caching/*.o hashtable/*.o
