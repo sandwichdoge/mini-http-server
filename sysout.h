@@ -71,10 +71,11 @@ char* system_output(char **args, char **env, char *input_data, long input_sz, lo
         int brkflag = 0; //if flag is 1 when in loop, read buffer 1 last time then break
         pid_t pid_s;
         char *output = malloc(1);
+
         close(fds_in[0]);
         fcntl(fds[0], F_SETFL, O_NONBLOCK); /*non-blocking IO, https://stackoverflow.com/questions/8130922/processes-hang-on-read
                                                                 since read() will hang when reading from empty pipe if this option is not set*/
-        if (input_data) write(fds_in[1], input_data, input_sz);
+        if (input_data && input_sz > 0) write(fds_in[1], input_data, input_sz);
         close(fds_in[1]);
 
         while (1) {
@@ -106,7 +107,9 @@ char* system_output(char **args, char **env, char *input_data, long input_sz, lo
         *(output + bytes_read_total) = '\0';
         *retcode = ret_code;
         *output_sz = bytes_read_total;
+        
         return output; //caller needs to free() this
     }
+
     return NULL;
 }
