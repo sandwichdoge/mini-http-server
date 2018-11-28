@@ -18,7 +18,7 @@ int PORT = 80;                              //default port 80
 int PORT_SSL = 443;                     //default port for SSL is 443
 int MAX_THREADS = 1024;            //maximum number of threads
 int CACHING_ENABLED = 1;          //enable server-side caching
-interpreter_t **INTER_TABLE;                    //interpreter table
+interpreter_t **INTER_TABLE;      //interpreter table
 cache_file_t **CACHE_TABLE;       //cache table
 SSL_CTX *CTX;                              //SSL cert
 

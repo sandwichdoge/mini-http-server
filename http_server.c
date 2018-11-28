@@ -19,12 +19,12 @@
  */
 //gcc -pg http_server.c http-request.c socket/serversocket.c socket/http-ssl.c mime/http-mimes.c fileops/fileops.c caching/caching.c caching/hashtable.c str-utils/str-utils.c -lpthread -lssl -lcrypto -pthread
 
-typedef struct client_info {
+typedef struct client_args {
     struct server_socket server_socket;
     int is_ssl;
     cache_file_t **cache_table;
     int cache_table_len;
-} client_info;
+} client_args;
 
 
 
@@ -54,7 +54,7 @@ int main()
         return -4;
     }
 
-    client_info args;
+    client_args args;
     pthread_t pthread[MAX_THREADS/2];
 
     /*Initialize SSL cert*/
@@ -115,7 +115,7 @@ int main()
  *TODO: date, proper log*/
 void *conn_handler(void *vargs)
 {
-    client_info *args = (client_info*) vargs;
+    client_args *args = (client_args*) vargs;
     int client_fd = 0;//args->client_fd;
     struct server_socket server_socket = args->server_socket;
     int is_ssl = args->is_ssl;
@@ -400,7 +400,7 @@ void *conn_handler(void *vargs)
             }
 
             //update node's last_accessed to current time.
-            cache_file_t *p = (cache_file_t*)f->parent;
+            cache_file_t *p = (cache_file_t*)f;
             time(&p->last_accessed); 
 
             //generate header from cached media
@@ -665,7 +665,7 @@ int file_get_interpreter(char *path, char *out, size_t sz)
     char *ext = file_get_ext(path);
     list_head_t *h = table_find((void**)INTER_TABLE, INTER_TABLE_SZ, ext);
     if (h != NULL) {
-        interpreter_t *it = h->parent;
+        interpreter_t *it = (interpreter_t*)h;
         strcpy(out, it->path);
     }
     else {
