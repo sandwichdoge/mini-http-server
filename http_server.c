@@ -71,7 +71,7 @@ int main()
     if (!SSL_CTX_check_private_key(CTX)) {
         fprintf(stderr,"SSL FATAL ERROR: Can't open key files or private key does not match certificate public key.\n");
     }
-    
+
 
     /*Start server*/
     printf("Started HTTP server on port %d and %d..\n", PORT, PORT_SSL);
@@ -319,6 +319,7 @@ void *conn_handler(void *vargs)
     //handle executable requests here
     char interpreter[1024] = ""; //path of interpreter program
     int is_interpretable = file_get_interpreter(local_uri, interpreter, sizeof(interpreter));
+
     if (is_interpretable > 0) { //CASE 1: uri is an executable file
 
         /*call interpreter, pass request body as argument*/
@@ -658,10 +659,10 @@ void http_send_error(int client_fd, int errcode, SSL *conn_SSL)
 *0: file is not interpretable
 *1: file is interpretable and interpreter exists on system
 *-1: error reading file
-*-2: interpretable file but interpreter does not exist on system*/
+*-2: interpretable file but interpreter does not exist on system or exec not allowed*/
 int file_get_interpreter(char *path, char *out, size_t sz)
 {
-    //TODO: read from global config which interpreter to use first, then look in 1st line of script if none found
+    //TODO: check allowed exec from global config, see if file is allowed execution
     char *ext = file_get_ext(path);
     list_head_t *h = table_find((void**)INTER_TABLE, INTER_TABLE_SZ, ext);
     if (h != NULL) {
@@ -680,8 +681,10 @@ int file_get_interpreter(char *path, char *out, size_t sz)
         }
     }    
     
-    if (file_executable(out) < 0) return -2; //no such interpreter on system
-    
+    if (file_executable(path) < 0 || file_executable(out) < 0) {
+        return -2; //no such interpreter on system or exec is not allowed
+    }
+
     return 1;
 }
 
