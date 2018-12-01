@@ -27,7 +27,6 @@ list_head_t* cache_add_file(char *path)
 
         /*init list_head_t struct for generic linked list*/
         parent->HEAD.key = parent->fname;
-        parent->HEAD.parent = parent;
         parent->HEAD.next = NULL;
 
         return &parent->HEAD;
@@ -37,7 +36,7 @@ list_head_t* cache_add_file(char *path)
 /*Remove file from memory buffer without freeing f*/
 void cache_remove_file(list_head_t *fh)
 {
-        cache_file_t *f = fh->parent;
+        cache_file_t *f = (cache_file_t*)fh;
         free(f->addr);
         free(f->fname);
 

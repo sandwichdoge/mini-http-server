@@ -4,7 +4,6 @@
  *We can attach anything after the head, functions operate only on head
  *Courtesy to Linux kernel list implementation*/
 typedef struct list_head_t {
-        void *parent;
         char *key;
         struct list_head_t *next;
 } list_head_t;
