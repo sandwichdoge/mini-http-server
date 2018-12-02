@@ -405,7 +405,7 @@ void *conn_handler(void *vargs)
             time(&p->last_accessed); 
 
             //generate header from cached media
-            generate_header_static_from_cache(header, (cache_file_t*)f->parent);
+            generate_header_static_from_cache(header, (cache_file_t*)f);
 
             
             //send header
@@ -416,7 +416,7 @@ void *conn_handler(void *vargs)
                 send_data(client_fd, header, strlen(header));
             }
             //send body data
-            serve_static_content_from_cache(client_fd, (cache_file_t*)f->parent, conn_SSL);
+            serve_static_content_from_cache(client_fd, (cache_file_t*)f, conn_SSL);
         }
         else { /*READ CONTENT FROM DISK AND SERVE IT*/
             //generate header for static media

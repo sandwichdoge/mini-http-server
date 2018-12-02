@@ -32,7 +32,6 @@ list_head_t *new_interpreter(char *ext, char *path)
     strcpy(p->path, path);
 
     p->HEAD.key = p->ext;
-    p->HEAD.parent = p;
     p->HEAD.next = NULL;
 
     return &p->HEAD;
