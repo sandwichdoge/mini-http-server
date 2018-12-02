@@ -2,7 +2,8 @@
 
 #define MAX_REQUEST_LEN 128*1024
 #define CACHE_TABLE_SIZE 1024
-
+#define WRITE_SZ 4096 * 8
+#define READ_SZ 2048
 
 /*Creating socket server in C:
  *socket() -> setsocketopt() -> bind() -> listen() -> accept()
@@ -119,7 +120,7 @@ void *conn_handler(void *vargs)
     int client_fd = 0;//args->client_fd;
     struct server_socket server_socket = args->server_socket;
     int is_ssl = args->is_ssl;
-    char buf[2048];
+    char buf[READ_SZ];
     char local_uri[2048];
     char decoded_uri[2048];
     char mime_type[128];
@@ -575,7 +576,7 @@ void serve_static_content_from_disk(int client_fd, char *local_uri, SSL *conn_SS
 {
     int bytes_read = 0; //bytes read from local resource
     size_t content_len = file_get_size(local_uri);
-    char response[4096]; //buffer
+    char response[WRITE_SZ]; //buffer
     FILE *content_fd = fopen(local_uri, "r"); //get requested file content
     if (!content_fd) {
         fprintf(stderr, "Cannot open local file for reading: %s\n", local_uri);
@@ -606,7 +607,7 @@ void serve_static_content_from_cache(int client_fd, cache_file_t *f, SSL *conn_S
     size_t content_len = f->sz;
 
     int bytes_written = 0; //bytes sent to remote client
-    int bytes_to_write = 4096; //send 4096 bytes at a time
+    int bytes_to_write = WRITE_SZ; //send WRITE_SZ bytes at a time
 
     while (bytes_written < content_len) {
         if (bytes_written + bytes_to_write > content_len) {
