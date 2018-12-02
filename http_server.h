@@ -36,7 +36,7 @@ void *conn_handler(void *fd);
 int is_valid_method(char *method);
 int env_vars_init(env_vars_t *env, struct http_request *req);
 int env_vars_free(env_vars_t *env);
-int generate_header(char *header, char *body, char *mime_type, char *content_len);
+int generate_header_interpreted(char *header, char *body, char *mime_type, char *content_len);
 int generate_header_static_from_disk(char *header, char *local_uri);
 int generate_header_static_from_cache(char *header, cache_file_t *f);
 int file_get_interpreter(char *path, char *out, size_t sz);

@@ -367,7 +367,7 @@ void *conn_handler(void *vargs)
 
         //at this point, data contains both header and body
         //now we generate header based on data returned from interpreter program
-        if (generate_header(header, data, mime_type, content_len) < 0) {
+        if (generate_header_interpreted(header, data, mime_type, content_len) < 0) {
             http_send_error(client_fd, 500, conn_SSL);
             goto cleanup_output;
         }
@@ -461,7 +461,7 @@ void *conn_handler(void *vargs)
  *body includes everything that backend script prints out, not just html content
  *header is the processed output
  *body is IMMUTABLE, do not attempt to modify it*/
-int generate_header(char *header, char *body, char *mime_type, char *content_len)
+int generate_header_interpreted(char *header, char *body, char *mime_type, char *content_len)
 {
     char buf[1024] = "";
     char user_defined_header[1024] = "";
