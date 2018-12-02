@@ -4,6 +4,7 @@
 struct server_socket create_server_socket(int port)
 {
     int err = 0;
+
     struct server_socket ret;
     struct sockaddr_in server;
 
@@ -17,7 +18,9 @@ struct server_socket create_server_socket(int port)
     if (!fd) fprintf(stderr, "Error creating socket\n");
     int opt = 1;
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)); //optional, prevents address already in use error
-    
+    //setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, (socklen_t)sizeof(sndbuf));
+    //setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &sndbuf, (socklen_t)sizeof(sndbuf));
+
     err = bind(fd, (struct sockaddr*)&server, sizeof(server));
     if (err < 0) {
         fprintf(stderr, "Error binding. Requires SU privileges if port < 1024. Or is port busy?\n");
