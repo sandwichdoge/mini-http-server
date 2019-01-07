@@ -340,6 +340,7 @@ void *conn_handler(void *vargs)
         char *args[] = {interpreter, p, NULL};
 
         int ret_code;
+        fcntl(client_fd, F_SETFD, FD_CLOEXEC); //Turn off client_fd inheritance for child process
         char *data = system_output(args, env, req->body, req->body_len, &sz, &ret_code, 20000); //20s timeout on backend script
         
         env_vars_free(&e);
