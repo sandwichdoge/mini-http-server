@@ -128,7 +128,8 @@ void *conn_handler(void *vargs)
     char content_len[16];
     long sz;
     char *body_old = NULL;
-    
+    int saved_flock = 0;
+
     /*BIG LOOP HERE*/
     while (1) { //these declarations should be optimized by compiler anyway, it's ok to declare within loop
     int bytes_read = 0;
@@ -158,7 +159,9 @@ void *conn_handler(void *vargs)
 
     /*INITIALIZE SSL CONNECTION IF CONNECTED VIA HTTPS*/
     if (is_ssl) {
-        fcntl(client_fd, F_SETFL, O_NONBLOCK); //non-blocking IO for timeout measure
+        saved_flock = fcntl(client_fd, F_GETFL);
+        fcntl(client_fd, F_SETFL, saved_flock | O_NONBLOCK); //non-blocking IO for timeout measure
+        
         conn_SSL = SSL_new(CTX);
         if (!conn_SSL) {
             fprintf(stderr, "Error creating SSL.\n"); fflush(stderr);
@@ -255,7 +258,8 @@ void *conn_handler(void *vargs)
         req->body = calloc(total_len + 1, 1); //point body to new concatenated body, a hacky C thing
         memcpy(req->body, body_old, total_read); //concatenate old body to new body
 
-        fcntl(client_fd, F_SETFL, O_NONBLOCK);
+        saved_flock = fcntl(client_fd, F_GETFL);
+        fcntl(client_fd, F_SETFL, saved_flock | O_NONBLOCK);
 
         fd_set client_fd_monitor;
         FD_ZERO(&client_fd_monitor);
@@ -284,7 +288,7 @@ void *conn_handler(void *vargs)
         }
         req->body_len = total_len; //update body len
 
-        int saved_flock = fcntl(client_fd, F_GETFL);
+        saved_flock = fcntl(client_fd, F_GETFL);
         fcntl(client_fd, F_SETFL, saved_flock & ~O_NONBLOCK);
     }
 
@@ -340,7 +344,8 @@ void *conn_handler(void *vargs)
         char *args[] = {interpreter, p, NULL};
 
         int ret_code;
-        fcntl(client_fd, F_SETFD, FD_CLOEXEC); //Turn off client_fd inheritance for child process
+        saved_flock = fcntl(client_fd, F_GETFL);
+        fcntl(client_fd, F_SETFD, saved_flock | FD_CLOEXEC); //Turn off client_fd inheritance for child process
         char *data = system_output(args, env, req->body, req->body_len, &sz, &ret_code, 20000); //20s timeout on backend script
         
         env_vars_free(&e);
@@ -444,11 +449,11 @@ void *conn_handler(void *vargs)
     cleanup:
     //shutdown connection and free resources
     if (is_ssl) {
-        int saved_flock = fcntl(client_fd, F_GETFL);
+        saved_flock = fcntl(client_fd, F_GETFL);
         fcntl(client_fd, F_SETFL, saved_flock & ~O_NONBLOCK);
     }
-    free(req);
-    if (!ssl_err) free(request); //free() shouldn't do anything if pointer is NULL, but in multithreading it's funky, so check jic
+    free(req); //request struct
+    if (!ssl_err) free(request); //raw request
     if (is_ssl && conn_SSL != NULL) disconnect_SSL(conn_SSL, ssl_err); //will call additional SSL_free() if there's error (ssl_err != 0)
     sock_cleanup(client_fd);
 
