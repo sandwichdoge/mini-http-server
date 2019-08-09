@@ -1,4 +1,5 @@
 make
 make ssl-ca
+make config
 make clean
 .sudo ./start-server
