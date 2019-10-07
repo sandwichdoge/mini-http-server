@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <assert.h>
 #include <math.h>
+#include <time.h>
 
 static size_t round_up_power_of_two(size_t n)
 {
@@ -20,6 +21,11 @@ static size_t round_up_power_of_two(size_t n)
 static size_t pseudo_hash(size_t number, size_t max)
 {
     return number & (max -1);
+}
+
+static size_t pseudo_hash_old(size_t number, size_t max)
+{
+    return number % max;
 }
 
 void test1()
@@ -46,10 +52,33 @@ void test2()
     assert(ret0 == 0);
 }
 
+void test_compare_hash_algos()
+{
+    clock_t before, after;
+    
+    before = clock();
+    size_t max = 1024 * 64;
+    for (int i = 0; i < 6553600; i++) {
+        size_t n = pseudo_hash(i, max);
+    }
+    after = clock();
+
+    printf("hash1 took %d\n", after - before);
+
+    before = clock();
+    for (int i = 0; i < 6553600; i++) {
+        size_t n = pseudo_hash_old(i, max);
+    }
+    after = clock();
+    printf("hash2 took %d\n", after - before);
+}
+
 int main()
 {
     test1();
     test2();
+
+    test_compare_hash_algos();
 
     return 0;
 }
