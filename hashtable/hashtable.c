@@ -23,7 +23,7 @@ static size_t round_up_power_of_two(size_t n)
 void** table_create(size_t len)
 {
         len = round_up_power_of_two(len);
-        return calloc(len, sizeof(void*));
+        return calloc(len, 1);
 }
 
 
