@@ -9,7 +9,7 @@ typedef struct list_head_t {
 } list_head_t;
 
 
-void** table_create(int len);
+void** table_create(size_t len);
 list_head_t* table_find(void **TABLE, int table_len, char *key);
 int table_add(void **TABLE, int table_len, list_head_t *node);
 int table_del_node(void **TABLE, int table_len, char *key, void (*free_func)(list_head_t*));

@@ -1,11 +1,28 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include "hashtable.h"
 
-
-void** table_create(int len)
+// Round n up to a power of 2
+static size_t round_up_power_of_two(size_t n)
 {
+        size_t p = 0;
+        for (int i = 0; p < (size_t)pow(2, 63); ++i) {
+                if (n <= p) {
+                        break;
+                }
+                else {
+                        p = (size_t)pow(2, i);
+                }
+        }
+        return p;
+}
+
+
+void** table_create(size_t len)
+{
+        len = round_up_power_of_two(len);
         return calloc(len, sizeof(void*));
 }
 
@@ -21,7 +38,13 @@ static size_t hashFNV(char *str, size_t max)
                 FNV_offset_basis ^= str[i];
         }
 
-        return FNV_offset_basis % max;
+        if (floor(log2(max)) == ceil(log2(max))) { // If max is power of 2
+                return FNV_offset_basis & (max - 1);
+        }
+        else
+        {
+                return FNV_offset_basis % max;       
+        }
 }
 
 
