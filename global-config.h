@@ -1,6 +1,6 @@
 #include "http_server.h"
 
-#define INTER_TABLE_SZ 48
+#define INTER_TABLE_SZ 128
 
 typedef struct interpreter_t {
     list_head_t HEAD;

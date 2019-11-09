@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -lpthread -lm -lssl -lcrypto -pthread -Wall -Ofast -march=native
+CFLAGS = -lpthread -lm -lssl -lcrypto -pthread -Wall -O2 -march=native
 
 current_dir = $(shell pwd)
 conf_demo_dir := PATH=$(current_dir)

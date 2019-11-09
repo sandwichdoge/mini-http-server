@@ -23,7 +23,7 @@ static size_t round_up_power_of_two(size_t n)
 void** table_create(size_t len)
 {
         len = round_up_power_of_two(len);
-        return calloc(len, 1);
+        return calloc(sizeof(void*), len);
 }
 
 
@@ -53,8 +53,9 @@ int table_destroy(void **TABLE, int len, void (*free_func)(list_head_t*))
 {
         list_head_t *prev;
         list_head_t *head;
+        
         for (int i = 0; i < len; i++) {
-                head= TABLE[i];
+                head = TABLE[i];
                 while (head != NULL) {
                         if (free_func) free_func(head);
                         prev = head;
@@ -90,7 +91,6 @@ list_head_t* table_find(void **TABLE, int table_len, char *key)
 int table_add(void **TABLE, int table_len, list_head_t *HEAD)
 {
         size_t hkey = hashFNV(HEAD->key, table_len);
-
         list_head_t *node = TABLE[hkey];
         if (node == NULL) {
                 TABLE[hkey] = HEAD;
