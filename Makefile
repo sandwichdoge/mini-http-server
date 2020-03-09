@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -lpthread -lm -lssl -lcrypto -pthread -Wall -O2 -march=native
+CFLAGS = -Wall -O2 -march=native
 
 current_dir = $(shell pwd)
 conf_demo_dir := PATH=$(current_dir)
@@ -15,7 +15,10 @@ conf_interp := INTERPRETERS={.py:/usr/bin/python},{.php:/usr/bin/php}
 
 
 all: http_server.o socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o str-utils/str-utils.o caching/caching.o hashtable/hashtable.o
-	$(CC) http_server.o socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o str-utils/str-utils.o caching/caching.o hashtable/hashtable.o $(CFLAGS) -o start-server
+	$(CC) http_server.o socket/serversocket.o socket/http-ssl.o http-request.o fileops.o mime/http-mimes.o \
+	str-utils/str-utils.o caching/caching.o hashtable/hashtable.o \
+	-lpthread -lm -lssl -lcrypto -pthread \
+	$(CFLAGS) -o start-server
 	
 config:
 	@echo GENERATING CONFIGS..
